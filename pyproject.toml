@@ -1,0 +1,16 @@
+[project]
+name = "hopfsym"
+version = "0.1.0"
+description = "A lightweight, dependency-free framework for symbolic manipulation and axiom-checking of (quasi-)Hopf algebras."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

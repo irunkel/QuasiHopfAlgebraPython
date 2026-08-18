@@ -1,0 +1,759 @@
+(*
+	SetDirectory["~/Dropbox/Personal/Forschung/Projects/Azat-Thomas-Singlet/Ingo Mathcode"];
+
+	(* these two values should be set before loading the code *)
+	pp=3;
+	tt=1; (* needs to be odd *)
+
+	<<"hopf-Uqsl2-quasi.txt"
+
+
+
+	SetDirectory["~/Dropbox/Personal/Forschung/Projects/Azat-Thomas-Singlet/Ingo Mathcode"];
+	For[pp=2,pp<=5,pp=pp+1,For[tt=1,tt<=2pp-1,tt=tt+2,
+	Print["p = ",pp,"  , tt = ",tt];
+	<<"hopf-Uqsl2-quasi.txt"
+	(* test here *)
+
+	testall;
+
+	]];
+
+
+(* more random testing *)
+	SetDirectory["/home/runkel/Personal/Forschung/Papers/arXiv-1712.07260/Ingo Mathcode"];
+	While[True,
+	pp = RandomInteger[{2,4}];
+	tt = 2*RandomInteger[{0,pp-1}]+1;
+	Print["p = ",pp,"  , tt = ",tt];
+	<<"hopf-Uqsl2-quasi.txt"
+	(* test here *)
+
+	testall;
+
+	];
+*)
+
+	$RecursionLimit = Infinity;
+
+(* Description via generators: E,F,K  *)
+
+	(* abbreviations *)
+	Clear[one,e0,e1,qq];
+	one = el[];
+	e0 = 1/2 * ( one + el["K"[pp]] );
+	e1 = 1/2 * ( one - el["K"[pp]] );
+
+
+(* simplify expressions *)
+
+	Clear[col,colnzero,qqreduce,qqnzero,qqprec];
+
+	qqreduce[x_] := Block[{aux,i,k},
+		aux = Together[x];
+		(* need to run twice in case numerator or denominator becomes a single power *)
+		For[i=1,i<=2,i=i+1,	
+		aux = Together[ ExpandDenominator[ExpandNumerator[aux]] /. 
+			qq^(a_) -> (-1)^Quotient[a,pp] *
+				If[ Mod[a,pp] == pp-1 && OddQ[pp] , 
+					-(-1)^(pp-1)*Sum[(-1)^k qq^k, {k,0,pp-2}], 
+					qq^Mod[a,pp]
+					] 
+			];
+		];
+		ExpandDenominator[ExpandNumerator[aux]]
+		];
+
+	qqprec = 100; (* digits in num eval. *)
+	qqnzero[x_] := Block[{aux},
+		aux = x /. qq->N[Exp[Pi I/pp],qqprec];
+		If[ (Abs[aux] < 10^(-qqprec/2)) === True , 0 , x ]
+		];
+
+	col[x_] := Collect[ Expand[x] , {el[___],tens[___]} , qqreduce];
+
+	colnzero[x_] := Collect[ Expand[x] , {el[___],tens[___]} , qqnzero];
+
+	(* test qqreduce
+
+		xxx = Sum[RandomInteger[{-30, 30}] qq^k, {k, 0, 30}]/
+			Sum[RandomInteger[{-30, 30}] qq^k, {k, 0, 30}];
+
+		N[ (xxx - qqreduce[xxx]) /. qq -> Exp[Pi I /pp]]
+
+	*)
+
+(* algebra relations *)
+
+	(* compute [E^m,F^n] via
+		[E^m,F^n] = [E E^(m-1), F^n] = E [E^(m-1),F^n] + [E,F^n] E^(m-1)
+		[E,F^n] = [E, F F^(n-1)] = F [E,F^(n-1)] + [E,F] F^(n-1)
+		[E,F] = 1/(q-q^-1) (K - K^-1)
+	*)
+
+	Clear[commEF];
+
+	commEF[m_,n_] := (commEF[m,n] = col[
+		mu[el["E"[1]],commEF[m-1,n]] + mu[commEF[1,n],el["E"[m-1]]]
+		]) /; (m>1 && n>0 && m<pp && n<pp);
+
+	commEF[1,n_] := (commEF[1,n] = col[
+		mu[el["F"[1]],commEF[1,n-1]] + mu[commEF[1,1],el["F"[n-1]]]
+		]) /; n>1;
+
+	commEF[1,1] = 1/(qq-qq^(-1)) * (el["K"[1]]-el["K"[-1]]);
+
+	(* el describes list of generators, the procedure orders it as E,F,K 
+	   and imposes relations E^p=0, F^p=0, K^(2p)=1, and K inverse to K^-1 *)
+	Clear[el];
+
+	el[a___,"E"[0],b___] := el[a,b];
+	el[a___,"F"[0],b___] := el[a,b];
+	el[a___,"K"[0],b___] := el[a,b];
+
+	el[a___,"E"[m_],b___] := 0 /; m>=pp;
+	el[a___,"F"[m_],b___] := 0 /; m>=pp;
+	el[a___,"K"[m_],b___] := el[a,"K"[Mod[m,2pp]],b] /; (m<0 || m>=2pp);
+
+	el[a___,"K"[m_],"K"[n_],b___] := el[a,"K"[Mod[m+n,2pp]],b] /; (m>0 && n>0);
+	el[a___,"E"[m_],"E"[n_],b___] := If[m+n <= pp , el[a,"E"[m+n],b] , 0] /; (m>0 && n>0);
+	el[a___,"F"[m_],"F"[n_],b___] := If[m+n <= pp , el[a,"F"[m+n],b] , 0] /; (m>0 && n>0);
+
+	el[a___,"K"[m_],"E"[n_],b___] := qq^(2m*n) el[a,"E"[n],"K"[m],b] /; (m>0 && n>0 && n<pp);
+	el[a___,"K"[m_],"F"[n_],b___] := qq^(-2m*n) el[a,"F"[n],"K"[m],b] /; (m>0 && n>0 && n<pp);
+
+	el[a___,"F"[m_],"E"[n_],b___] := el[a,"E"[n],"F"[m],b] - mu[el[a],commEF[n,m],el[b]] /; 
+		(m>0 && n>0 && m<pp && n<pp);
+
+	Clear[symbols,nosym];
+	symbols = {el,tens};
+	(* check if list u contains no symbol *) 
+	nosym[u_] := And @@ Map[ Length[Position[u,#]]===0 & , symbols ];
+
+	Clear[basis];
+	basis := (basis = Map[el @@ # &,Flatten[Outer[List,
+		Table["E"[k],{k,0,pp-1}],
+		Table["F"[k],{k,0,pp-1}],
+		Table["K"[k],{k,0,2pp-1}],
+		1],2]]);
+
+
+(* product *)
+
+	Clear[mu];
+	(* bilinear mu *)
+	mu[ 0, _ ] := 0;
+	mu[ _, 0 ] := 0;
+	mu[ a_ * b_, c_] := a * mu[b,c] /; nosym[a];
+	mu[ a_ * b_, c_] := b * mu[a,c] /; nosym[b];
+	mu[ c_, a_ * b_] := a * mu[c,b] /; nosym[a];
+	mu[ c_, a_ * b_] := b * mu[c,a] /; nosym[b];
+	mu[ a_ + b_, c_] := mu[ a,c] + mu[ b,c];
+	mu[ c_, a_ + b_] := mu[ c,a] + mu[ c,b];
+
+	(* product *)
+	mu[el[a___],el[b___]] := el[a,b];
+	(* n-fold products *)
+	mu[a_,b_,c__] := mu[a,mu[b,c]];
+
+(* tensor powers *)
+
+	Clear[tens];
+	(* bilinear tens *)
+	tens[ 0, _ ] := 0;
+	tens[ _, 0 ] := 0;
+	tens[ a_ * b_, c_] := a * tens[b,c] /; nosym[a];
+	tens[ a_ * b_, c_] := b * tens[a,c] /; nosym[b];
+	tens[ c_, a_ * b_] := a * tens[c,b] /; nosym[a];
+	tens[ c_, a_ * b_] := b * tens[c,a] /; nosym[b];
+	tens[ a_ + b_, c_] := tens[ a,c] + tens[ b,c];
+	tens[ c_, a_ + b_] := tens[ c,a] + tens[ c,b];
+
+	(* n-fold products *)
+	tens[a_,b_,c__] := tens[a,tens[b,c]];
+
+	(* product in H^2 *)
+	mu[tens[a_,b_],tens[c_,d_]] := tens[ mu[a,c] , mu[b,d] ];
+
+	(* assoc in H^3 *)
+	tens[ tens[a_,b_], c_ ] := tens[a, tens[b,c] ];
+
+	(* tensor flip *)
+	Clear[flip];
+	(* linear *)
+	flip[ 0 ] := 0;
+	flip[ a_ * b_ ] := a * flip[b] /; nosym[a];
+	flip[ a_ * b_ ] := b * flip[a] /; nosym[b];
+	flip[ a_ + b_ ] := flip[ a ] + flip[ b ];
+
+	flip[tens[u_,v_]] := tens[v,u];
+
+
+(* coproduct *)
+
+	Clear[del];
+	(* linear del *)
+	del[ 0 ] := 0;
+	del[ a_ * b_ ] := a * del[b] /; nosym[a];
+	del[ a_ * b_ ] := b * del[a] /; nosym[b];
+	del[ a_ + b_ ] := del[ a ] + del[ b ];
+
+	del[el[]] := tens[el[],el[]];
+	del[el["K"[m_]]] := tens[el["K"[m]],el["K"[m]]];
+	del[el["E"[m_]]] := (del[el["E"[m]]] = col[
+		mu[del[el["E"[1]]],del[el["E"[m-1]]]]
+		]) /; m>1;
+	del[el["F"[m_]]] := (del[el["F"[m]]] = col[
+		mu[del[el["F"[1]]],del[el["F"[m-1]]]]
+		]) /; m>1;
+
+	del[el["E"[1]]] := tens[el["E"[1]],el["K"[1]]] + tens[e0+qq^tt*e1,el["E"[1]]];
+	del[el["F"[1]]] := tens[el["F"[1]],el[]] + tens[mu[e0+qq^(-tt)*e1,el["K"[-1]]],el["F"[1]]];
+
+	del[el[a_,b__]] := mu[ del[el[a]] , del[el[b]] ];
+
+	(* coproduct on Q x Q and Q x Q x Q *)
+	Clear[delid, iddel, delidid, iddelid, ididdel];
+
+	delid[a_] := (a /. tens[u_,v_] -> tens[del[u],v]);
+	iddel[a_] := (a /. tens[u_,v_] -> tens[u,del[v]]);
+
+	delidid[a_] := (a /. tens[u_,v_,w_] -> tens[del[u],v,w]);
+	iddelid[a_] := (a /. tens[u_,v_,w_] -> tens[u,del[v],w]);
+	ididdel[a_] := (a /. tens[u_,v_,w_] -> tens[u,v,del[w]]);
+
+
+(* counit *)
+
+	Clear[eps];
+	(* linear eps *)
+	eps[ 0 ] := 0;
+	eps[ a_ * b_ ] := a * eps[b] /; nosym[a];
+	eps[ a_ * b_ ] := b * eps[a] /; nosym[b];
+	eps[ a_ + b_ ] := eps[ a ] + eps[ b ];
+
+	eps[el[]] := 1;
+	eps[el["K"[m_]]] := 1;
+	eps[el["E"[m_]]] := 0 /; m>0;
+	eps[el["F"[m_]]] := 0 /; m>0;
+	eps[el[a_,b__]] := eps[el[a]] * eps[el[b]];
+
+
+(* coassociator *)
+
+	Clear[Phi,Phiinv];
+	Phi = col[ tens[one,one,one] +  tens[e1,e1,el["K"[-tt]]-el[]] ];
+	Phiinv = col[ tens[one,one,one] +  tens[e1,e1,el["K"[tt]]-el[]] ];
+
+	(* check against counit and inverse:
+
+		{ col[	(col[Phi] /. tens[a_,b_,c_] -> eps[a] * tens[b,c]) - tens[one,one]	] ,
+		  col[	(col[Phi] /. tens[a_,b_,c_] -> eps[b] * tens[a,c]) - tens[one,one]	] ,
+		  col[	(col[Phi] /. tens[a_,b_,c_] -> eps[c] * tens[a,b]) - tens[one,one]	] }
+
+		col[ mu[ Phi, Phiinv ] ]
+	*)
+
+
+(* antipode *)
+
+	Clear[ss];
+	(* linear ss *)
+	ss[ 0 ] := 0;
+	ss[ a_ * b_ ] := a * ss[b] /; nosym[a];
+	ss[ a_ * b_ ] := b * ss[a] /; nosym[b];
+	ss[ a_ + b_ ] := ss[ a ] + ss[ b ];
+
+	ss[el[]] := el[];
+	ss[el["K"[m_]]] := el["K"[-m]];
+	ss[el["E"[1]]] := -mu[e0+qq^tt e1,el["E"[1],"K"[-1]]];
+	ss[el["F"[1]]] := -mu[e0+qq^(-tt) e1,el["K"[1], "F"[1]]];
+	ss[el["E"[m_]]] := (ss[el["E"[m]]] = col[mu[ ss[el["E"[1]]] , ss[el["E"[m-1]]] ]]) /; (m>1 && m<pp);
+	ss[el["F"[m_]]] := (ss[el["F"[m]]] = col[mu[ ss[el["F"[1]]] , ss[el["F"[m-1]]] ]]) /; (m>1 && m<pp);
+	ss[el[a_,b__]] := mu[ss[el[b]],ss[el[a]]];
+
+
+(* evaluation and coevaluation element *)
+
+	Clear[alpha,beta];
+	alpha = one;
+	beta = e0 + mu[el["K"[-tt]],e1];
+
+
+(* R-matrix *)
+
+	Clear[RR,qnum,qfact];
+
+	(* [a} = q^a - q^(-a) *)
+	qnum[a_] := (qq^a-qq^(-a))/(qq-qq^(-1));
+	qfact[0] = 1;
+	qfact[a_] := (qfact[a] = qnum[a] * qfact[a-1]) /; a>=1;
+
+	RR := (RR = col[	
+		1/(4pp) Sum[ 
+
+			(qq-qq^(-1))^n / qfact[n] * 
+			qq^( n(n-1)/2 - 2s*r ) *
+			( 1 + qq^(tt*r) + qq^(-tt(n+s)) + qq^(1/2*tt^2 + tt*r - tt(n+s)) ) *
+			tens[ el["K"[s],"E"[n]] , el["K"[r],"F"[n]] ] 
+
+		, {n,0,pp-1},{s,0,2pp-1},{r,0,2pp-1}
+		]]);
+
+
+
+(* Ribbon element *)
+
+	Clear[rib, ribinv];
+	rib := (rib = col[
+
+		(1-I)/(2Sqrt[pp]) * Sum[
+
+			(qq-qq^(-1))^n / qfact[n] * 
+			qq^( n(j-1/2)+1/2(j+pp+1)^2 ) *
+			el["F"[n],"E"[n],"K"[j]]
+
+		, {n,0,pp-1}, {j,0,2pp-1} ]
+		]);
+
+
+(* Hopf pairing and monodromy *)
+
+	Clear[mon];
+	mon := (mon = colnzero[col[Block[ {r21} ,
+		r21 = RR /. tens[u_,v_] -> tens[v,u];
+		col[mu[r21,RR]]
+		]]]);
+
+
+(*
+	Clear[hopfpair];
+	hopfpair := (hopfpair = Block[ {mon1,del3,aux1,aux2,aux3} ,
+		mon1 = col[tens[ mon, one ]];
+		del3 = col[ Phiinv /. tens[u_,v_,w_] -> tens[u,v,del[w]] ];
+		aux1 = col[ mu[ Phiinv , mon1 , Phi ] ]  /. tens[u_, v_, w_] -> tens[one, u, v, w];
+		aux2 = col[ mu[ aux1 , del3 ] ];
+		col[ aux2 /. tens[u_,v_,w_,x_] -> tens[ mu[ss[u],v] , mu[ss[w],x] ] ]
+		]);
+
+
+	Clear[tomat];
+	tomat[a_] := Outer[ Coefficient[a,tens[#1,#2]]& , basis, basis ];
+*)
+
+
+(* Drinfeld element *)
+
+	Clear[drin];
+	drin := (drin = Block[{aux},
+			aux = col[ tens[Phi,RR] ];
+			col[ aux /. tens[p1_,p2_,p3_,r1_,r2_] -> mu[
+				ss[ mu[ p2 , beta , ss[p3] ]] , 
+				ss[r2] , alpha , r1 , p1 ] ]
+		]);
+
+
+(* the element F in Drinfeld's paper giving compatibility of Delta and S *)
+
+	Clear[ff];
+	ff := (ff = Block[{xx,ga},
+		xx = col[ mu[ tens[one,Phi] , ididdel[Phiinv] ] ];
+
+		ga = col[ xx /. tens[a1_,a2_,a3_,a4_] -> 
+			tens[ mu[ ss[a2] , alpha , a3 ] , mu[ ss[a1] , alpha , a4 ] ]
+			];
+
+		col[ Phi /. tens[a1_,a2_,a3_] -> mu[  
+			(col[del[a1]] /. tens[u_,v_] -> tens[ss[v],ss[u]]) ,
+			ga , 
+			del[ mu[ a2 , beta , ss[a3] ] ]
+			]
+			]
+		]);
+
+
+(*********************)
+(**  test routines  **)
+(*********************)
+
+	(* the number of random tests to be done is ntest^2 *) 
+	ntest = 2;
+	(* set to 1 for occasional printouts and to 0 for no printouts *)
+	randomprint = 0.5;
+
+	(* test assoc *)
+	Clear[testAssoc,testAssocSub]; 
+	testAssoc := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+		For[i=1, i<=ntest, i=i+1,
+			testAssocSub[ RandomChoice[basis] , RandomChoice[basis] , RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testAssoc - success ****"];
+		];
+	testAssocSub[a_,b_,c_] := Block[ {rhs,lhs,res},
+		rhs = mu[a,mu[b,c]]; lhs = mu[mu[a,b],c]; 
+
+		res = colnzero[lhs-rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testAssoc: a=",a," b=",b," c=",c,
+			" a(bc)=",col[rhs]," (ab)c=",col[lhs]];
+			Abort[];
+			];
+		If[Random[]<0.01*randomprint,Print["testAssoc random printout: a=",a," b=",b," c=",c," res=",col[lhs] ]];
+		];
+
+	(* test coassoc *)
+	Clear[testCoassoc,testCoassocSub]; 
+	testCoassoc := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+		For[i=1, i<=ntest, i=i+1,
+			testCoassocSub[ RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testCoassoc - success ****"];
+		];
+	testCoassocSub[a_] := Block[ {rhs,lhs,res},
+		rhs = col[ delid[del[a]] ];	rhs = col[ mu[rhs , Phi] ];
+		lhs = iddel[del[a]];		lhs = col[ mu[Phi , lhs] ];
+
+		res = colnzero[lhs-rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testCoassoc: a=",a,
+			" lhs=",lhs," rhs=",rhs];
+			Abort[];
+			];
+		If[Random[]<0.05*randomprint,Print["testCoassoc random printout: a=",a," res=",col[lhs] ]];
+		];
+
+	(* test Hopfaxiom *)
+	Clear[testHopf,testHopfSub]; 
+	testHopf := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+		For[i=1, i<=ntest, i=i+1,
+			testHopfSub[ RandomChoice[basis] , RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testHopf - success ****"];
+		];
+	testHopfSub[a_,b_] := Block[ {rhs,lhs,res},
+		rhs = del[mu[a,b]];
+		lhs = mu[del[a],del[b]];
+
+		res = col[lhs-rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testHopf: a=",a," b=",b,
+			" lhs=",col[lhs]," rhs=",col[rhs]];
+			Abort[];
+			];
+		If[Random[]<0.05*randomprint,Print["testHopf random printout: a=",a," b=",b," res=",col[lhs] ]];
+		];
+
+	(* test antipode *)
+	Clear[testAntipode,testAntipodeSub]; 
+	testAntipode := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+		For[i=1, i<=ntest, i=i+1,
+			testAntipodeSub[ RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testAntipode - success ****"];
+		];
+
+	testAntipodeSub[a_] := Block[ {eq1,eq2},
+		eq1 = del[a] /. tens[u_,v_] -> mu[ss[u],alpha,v]; 
+		eq2 = del[a] /. tens[u_,v_] -> mu[u,beta,ss[v]];
+
+		If[ (colnzero[ eq1 - eps[a]*alpha ] =!= 0) || (colnzero[ eq2 - eps[a]*beta ] =!= 0) , 
+			Print["ERROR - testAntipode: a=",a,
+			" eq1=",col[eq1]," eq2=",col[eq2]];
+			Abort[];
+			];
+		If[Random[]<0.1*randomprint,Print["testAntipode random printout: a=",a," eq1=",col[eq1] ]];
+		];
+
+	(* pentagon for coassociator *)
+	Clear[testPentagon]; 
+	testPentagon := Block[ {t1,t2,t3,rhs,lhs,res},
+		t1 = col[ delidid[Phi] ];
+		t2 = col[ ididdel[Phi] ];
+		lhs = col[ mu[ t1,t2 ] ];
+
+		t1 = col[ tens[ Phi , one ] ];
+		t2 = col[ iddelid[ Phi ] ];
+		t3 = col[ tens[ one , Phi ] ];
+		rhs = mu[t1,t2,t3];
+
+		res = colnzero[lhs - rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testPentagon"];
+			Abort[];
+			];
+		Print["**** testPentagon - success ****"];
+		];
+
+
+	(* test R-matrix intertwiner *)
+	Clear[testRinter,testRinterSub]; 
+	testRinter := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+
+		If[	( colnzero[ (RR /. tens[x_,y_] -> eps[x]*y) - el[] ] =!= 0 ) ||
+			( colnzero[ (RR /. tens[x_,y_] -> eps[y]*x) - el[] ] =!= 0 )
+			, 
+			Print["ERROR - testRinter: eps property"];
+			Abort[];
+			];
+
+		For[i=1, i<=ntest, i=i+1,
+			testRinterSub[ RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testRinter - success ****"];
+		];
+
+	testRinterSub[a_] := Block[ {eq1,eq2,res},
+		eq1 = col[ mu[RR,del[a]] ]; 
+		eq2 = col[ mu[flip[del[a]],RR] ];
+		res = colnzero[eq1 - eq2];
+
+		If[ res =!= 0 , 
+			Print["ERROR - testRinter: a=",a,
+			" eq1=",col[eq1]," eq2=",col[eq2]];
+			Abort[];
+			];
+		If[Random[]<0.1*randomprint,Print["testRinter random printout: a=",a," eq1=",col[eq1] ]];
+		];
+
+	(* hexagon for coassociator and R-matrix *)
+	Clear[testHexagon]; 
+	testHexagon := Block[ {phi231,phi132,phi312inv,phi213inv,r13,r23,aux,rhs,lhs,res},
+
+		phi231	= Phi /. tens[a1_,tens[a2_,a3_]] -> tens[a2,a3,a1];
+		phi132	= Phi /. tens[a1_,tens[a2_,a3_]] -> tens[a1,a3,a2];
+		r13	= RR /. tens[u_,v_] -> tens[u,one,v];
+		r23	= RR /. tens[u_,v_] -> tens[one,u,v];
+
+		aux = col[ delid[RR] ];
+		lhs = col[ mu[ phi231 , aux , Phi ] ];
+		rhs = col[ mu[ r13 , phi132 , r23 ] ];
+	
+		res = colnzero[lhs-rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testHexagon1"];
+			Abort[];
+			];
+		Print["**** testHexagon1 - success ****"];
+
+		phi312inv = Phiinv /. tens[a1_,tens[a2_,a3_]] -> tens[a3,a1,a2];
+		phi213inv = Phiinv /. tens[a1_,tens[a2_,a3_]] -> tens[a2,a1,a3];
+		r12	= RR /. tens[u_,v_] -> tens[u,v,one];
+		r13	= RR /. tens[u_,v_] -> tens[u,one,v];
+
+		aux = col[ iddel[RR] ];	
+		lhs = col[ mu[ phi312inv , aux , Phiinv ] ];
+		rhs = col[ mu[ r13 , phi213inv , r12 ] ];
+
+		res = colnzero[lhs-rhs];
+		If[ res =!= 0 , 
+			Print["ERROR - testHexagon2"];
+			Abort[];
+			];
+		Print["**** testHexagon2 - success ****"];
+
+		];
+
+	(* evaluation and coevaluation elements *)
+	Clear[testEvalCoeval]; 
+	testEvalCoeval := Block[ {t1,t2,eq1,eq2},
+		t1 = col[Phi] /. tens[a_,tens[b_,c_]] -> mu[ss[a],alpha,b,beta,ss[c]];
+		eq1 = colnzero[ t1 - one ];
+
+		If[ eq1 =!= 0 , 
+			Print["ERROR - testEvalCoeval - trap1"];
+			Abort[];
+			];
+
+		t2 = col[Phiinv] /. tens[a_,tens[b_,c_]] -> mu[a,beta,ss[b],alpha,c];
+		eq2 = colnzero[ t2 - one ];
+
+		If[ eq2 =!= 0 , 
+			Print["ERROR - testEvalCoeval - trap2"];
+			Abort[];
+			];
+		Print["**** testEvalCoeval - success ****"];
+
+		];
+
+	(* Properties of the ribbon element *)
+	Clear[testRibbon]; 
+	testRibbon := Block[ {res, rhs, lhs, aux},
+		WriteString["stdout", "\nProgress: "];
+
+		res = colnzero[ ss[rib] - rib ];
+			WriteString["stdout", "a"];
+		If[ res =!= 0 || qqnzero[ eps[rib]-1 ] =!= 0, 
+			Print["ERROR - testRibbon - trap1"];
+			Abort[];
+			];
+
+		lhs = col[ mu[drin, ss[drin]] ];
+			WriteString["stdout", "b"];
+		rhs = col[ mu[rib,rib] ];
+			WriteString["stdout", "b"];
+		res = colnzero[ lhs - rhs ];
+			WriteString["stdout", "b"];
+		If[ res =!= 0 , 
+			Print["ERROR - testRibbon - trap2"];
+			Abort[];
+			];
+
+		aux = col[ del[rib] ];
+			WriteString["stdout", "c"];
+		lhs = col[ mu[mon,aux] ];
+			WriteString["stdout", "c"];
+		rhs = col[ tens[rib,rib] ];
+			WriteString["stdout", "c"];
+		res = colnzero[ lhs - rhs ];
+			WriteString["stdout", "c"];
+		If[ res =!= 0 , 
+			Print["ERROR - testRibbon - trap3"];
+			Abort[];
+			];
+
+		Print["**** testRibbon - success ****"];
+
+		];
+
+	(* Test compatibility of coproduct and antipode *)
+	Clear[testSDeltaR,testSDeltaRSub];
+
+	testSDeltaR := Block[ {},
+		WriteString["stdout", "\nProgress: "];
+
+		For[i=1, i<=ntest, i=i+1,
+			testSDeltaRSub[ RandomChoice[basis] ];
+			WriteString["stdout", Mod[i,10]];
+		];
+		Print["**** testSDeltaR - success ****"];
+		];
+
+	testSDeltaRSub[a_] := Block[ {eq1,eq2,res},
+
+		eq1 = col[mu[ col[del[a]] /. tens[u_,v_] -> tens[ss[v],ss[u]] , ff ]]; 
+		eq2 = col[mu[ ff , del[ss[a]] ]];
+		res = colnzero[eq1 - eq2];
+
+		If[ res =!= 0 , 
+			Print["ERROR - testSDeltaR: a=",a,
+			" eq1=",col[eq1]," eq2=",col[eq2]];
+			Abort[];
+			];
+		If[Random[]<0.1*randomprint,Print["testSDeltaR random printout: a=",a," eq1=",col[eq1] ]];
+		];
+
+
+	(* Test some explicit expressions *)
+	Clear[testExpression]; 
+	testExpression := Block[ {res,RRsec},
+
+		RRsec = col[
+		1/pp Sum[ 
+			(qq-qq^(-1))^n / qfact[n] *
+			qq^(n(n-1)/2 + 2n(s-r) - 2s*r) *
+			mu[ tens[el["E"[n],"K"[s]],el["F"[n],"K"[r]]] ,
+				tens[e0,e0] * 1 +
+				tens[e0,e1] * qq^(tt*r) +
+				tens[e1,e0] * qq^(-tt(n+s)) +
+				tens[e1,e1] * qq^(tt^2/2 + tt*r - tt(n+s)) 
+			]
+		, {n,0,pp-1},{s,0,pp-1},{r,0,pp-1}
+		]];
+
+		res = colnzero[RR-RRsec];
+			WriteString["stdout", "a"];
+		If[ res =!= 0 , 
+			Print["ERROR - testExpression - trap1"];
+			Abort[];
+			];
+
+
+		mon2 = col[
+		1/(2pp) Sum[ 
+			(qq-qq^(-1))^(m+n) / (qfact[m]*qfact[n]) * qq^(m(m-1)/2 + n(n-1)/2) *
+			Sum[ qq^(-m^2 + m*(j-i) - i*j ) * 
+				( 1/2*(1+(-1)^(i+m)) + 1/2*(1-(-1)^(i+m)) * qq^(tt(m-n)) ) *
+				tens[ el["K"[j],"F"[m],"E"[n]] , el["K"[i],"E"[m],"F"[n]] ]
+			, {i,0,2pp-1},{j,0,2pp-1} ]
+		, {n,0,pp-1},{m,0,pp-1} ]
+		];
+
+		res = colnzero[mon-mon2];
+			WriteString["stdout", "b"];
+		If[ res =!= 0 , 
+			Print["ERROR - testExpression - trap2"];
+			Abort[];
+			];
+
+		Print["**** testExpression - success ****"];
+		];
+
+
+
+(*
+=======================================
+(*TODO*)
+	(* Is the monodromy matrix non-degenerate? *)
+	Clear[testMonodromy]; 
+	testMonodromy := Block[ {r21, mon, monmat, res},
+
+		r21 = RR /. tens[u_,v_] -> tens[v,u];
+		mon = col[mu[r21,R]];
+
+		monmat = Outer[ Coefficient[mon,tens[#1,#2]]& , basisQ, basisQ ];
+		res = Det[monmat];
+
+		Print["Det of monodromy matrix: ",res];
+
+		If[ res === 0 , 
+			Print["ERROR - testMonodromy - det = 0"];
+			Abort[];
+			];
+		Print["**** testMonodromy - success ****"];
+
+		];
+
+=======================================
+*)
+
+Clear[tic,toc,starttime];
+tic := ( starttime = TimeUsed[]; Print["tic."]; );
+toc[] := Print["toc : ",TimeUsed[]-starttime, "sec."];
+toc[s_] := Print["toc ",s," : ",TimeUsed[]-starttime, "sec."];
+
+
+	Clear[testall];
+	testall := Block[ {},
+		(* one-off tests *)
+
+		testPentagon;
+		testHexagon;
+		testEvalCoeval;
+		testRibbon;
+		testExpression;
+
+		(* random testing *)
+
+		For[j=1, j<=ntest, j=j+1,
+		testAssoc;
+		testHopf;
+		testRinter;
+		testAntipode;
+		testSDeltaR;
+		testCoassoc;
+		];
+		WriteString["stdout", "\nSuccess!\n"];
+		];
+
+
+
