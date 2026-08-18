@@ -212,11 +212,14 @@ light" principle above before it's needed), but when it comes up:
 
 ## Where this project lives
 
+- Local checkout on Ingo's machine: `~/ClaudeFolder/QuasiHopfAlgebraPython`
+  -- a real git clone with SSH push access to
+  https://github.com/irunkel/QuasiHopfAlgebraPython. This is the
+  primary place for day-to-day development now.
 - Cloud sandbox (Cowork sessions): `~/QuasiHopfAlgebraPython` (or
-  wherever the session's working directory puts it).
-- Local mirror on Ingo's machine: `~/ClaudeFolder/QuasiHopfAlgebraPython`
-  (plain files, kept in sync manually via the device bridge -- not a
-  git checkout).
+  wherever the session's working directory puts it). Used for longer
+  exploratory sessions. It has no direct GitHub access, so any changes
+  made there need a git bundle to transfer back to the local checkout.
 - GitHub: https://github.com/irunkel/QuasiHopfAlgebraPython (the
   canonical source of truth / durable history across sessions).
 - The original Mathematica reference material (the arXiv PDF and the
