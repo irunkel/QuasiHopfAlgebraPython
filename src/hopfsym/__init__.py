@@ -5,7 +5,7 @@ See CLAUDE.md for the architecture overview and README.md for a usage
 example.
 """
 
-from .element import Element, TensorKey, tensor, apply_to_factor, tensor_mul
+from .element import Element, TensorKey, tensor, apply_to_factor, tensor_mul, Δ, ε
 from .algebra import QuasiHopfAlgebra
 
 __all__ = [
@@ -14,5 +14,7 @@ __all__ = [
     "tensor",
     "apply_to_factor",
     "tensor_mul",
+    "Δ",
+    "ε",
     "QuasiHopfAlgebra",
 ]

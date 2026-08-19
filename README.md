@@ -101,13 +101,21 @@ src/hopfsym/
     axioms.py          # generic axiom checkers, written against that interface
     qring.py           # two coefficient rings: free q, and q a root of unity
     examples/
-        quantum_sl2_quasi.py   # U_q^{(Phi)}sl(2), see above
-        restricted_sl2.py      # U_res sl(2) with K^p = 1, see above
-        symplectic_fermion.py  # Q(N, beta), see above
+        quantum_sl2_quasi.py         # U_q^{(Phi)}sl(2), see above
+        quantum_sl2_quasi_usage.py   # runnable/steppable usage examples for it
+        restricted_sl2.py            # U_res sl(2) with K^p = 1, see above
+        restricted_sl2_usage.py      # runnable/steppable usage examples for it
+        symplectic_fermion.py        # Q(N, beta), see above
+        symplectic_fermion_usage.py  # runnable/steppable usage examples for it
 tests/
 reference/
     hopf-Uqsl2-quasi.txt        # original Mathematica source this was ported from
 ```
+
+Each `..._usage.py` is a small, self-contained walkthrough for that one
+algebra (defining relations, example coproducts, then the axiom
+checks) -- run as a plain script, or step through cell-by-cell in an
+editor that understands `# %%` markers (e.g. VSCode's Python extension).
 
 See `CLAUDE.md` for the architecture write-up, the math background, and
 notes for adding a new algebra.

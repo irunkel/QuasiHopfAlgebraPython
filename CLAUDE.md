@@ -203,22 +203,26 @@ approximation -- it is very likely exactly representable the same way.
 Element (element.py)
     a dict {basis_key: coefficient}. Doesn't know what a basis key
     means -- that's up to the algebra. TensorKey marks a basis key as
-    an n-fold tensor of other keys (tensor(), apply_to_factor(),
-    tensor_mul() build/manipulate these generically). An optional
-    ``.alg`` tag (None by default, propagated through +/-/scalar*) lets
+    an n-fold tensor of other keys (tensor(), permute_factors()/flip(),
+    apply_to_factor(), tensor_mul() build/manipulate these generically).
+    An optional ``.alg`` tag (None by default, propagated through
+    +/-/scalar*/tensor()/permute_factors()/apply_to_factor()) lets
     ``E * F`` mean ``alg.mul(E, F)`` when both sides are tagged with the
-    same algebra -- see "Element * Element" below.
+    same algebra, and ``Δ(x)``/``ε(x)`` mean ``alg.comul(x)``/
+    ``alg.counit(x)`` -- see "Element * Element" below.
 
 QuasiHopfAlgebra (algebra.py)
-    the interface: basis(), unit(), multiply_basis() [+ mul() and elt(),
-    given for free], comul(), counit(), antipode(), associator(),
+    the interface: basis(), unit(), multiply_basis() [+ mul(), elt() and
+    tag(), given for free], comul(), counit(), antipode(), associator(),
     associator_inv(), alpha(), beta() -- required; r_matrix(), ribbon(),
     drinfeld(), f_element() -- optional (quasi-triangular/ribbon
     structure only, default to NotImplementedError).
 
 axioms.py
-    generic checkers written only against that interface:
-    check_associativity, check_bialgebra_homomorphism, check_counit,
+    generic checkers written only against that interface, in terms of
+    tagged Elements and Δ/ε/*/** rather than alg.comul(...)/alg.mul(...)
+    spelled out (see "Element * Element" below): check_associativity,
+    check_bialgebra_homomorphism, check_counit,
     check_twisted_coassociativity, check_pentagon, check_antipode,
     check_evaluation_coevaluation, and check_all() to run the required
     ones together; check_r_matrix_intertwiner, check_hexagon,
@@ -250,28 +254,33 @@ mean the algebra product or the tensor product (and `Element` is
 deliberately kept algebra-agnostic, see above). `alg.elt(key)` (and
 `alg.mul(...)`'s return value) tag the `Element` with `alg`
 (`Element.alg`, default `None`); `*` between two `Element`s with the
-*same* `.alg` calls `alg.mul` -- this was Ingo's explicit request
-(`*` should only ever mean the algebra product, never tensor; use
-`tensor(a, b)` for that). `None` acts as a wildcard (same convention as
-`CycloNum`'s field-degree `None`), so a tagged element still combines
-fine with an untagged one (e.g. `alg.unit()`, or anything from
-`tensor()`/`comul()`/`associator()`, which stay untagged on purpose --
-tagging a `H^{(x)n}` element would let `*` wrongly try `multiply_basis`
-on a `TensorKey`). Combining two elements tagged with *different*
-algebra *instances* raises `ValueError` -- deliberately by identity
-(`is`), not by equal parameters, so e.g. two separately-constructed
-`RestrictedSl2(p=3)` objects are *not* considered interchangeable; if
-that surprises you in an interactive session (re-running a cell that
-reconstructs `alg` invalidates old tagged Elements bound to the stale
-instance), that's the tradeoff for catching real cross-algebra mixups
-loudly instead of silently.
+*same* `.alg` calls `alg`'s product -- this was Ingo's explicit request
+(`*` should only ever mean *an* algebra product, never `tensor(a, b)`
+itself). Which product depends on arity, read off the operands' basis
+keys (`TensorKey` vs plain, see `_arity`): `alg.mul` for two plain
+(single-factor) Elements, or the componentwise tensor-algebra product
+(`tensor_mul`, `(a(x)b)*(c(x)d) = (a*c)(x)(b*d)`) when either side is an
+n-fold tensor Element -- mismatched arities raise `ValueError` (from
+`tensor_mul` itself), not a silent wrong answer. `None` acts as a
+wildcard (same convention as `CycloNum`'s field-degree `None`), so a
+tagged element still combines fine with an untagged one (e.g.
+`alg.unit()`, or anything built from untagged pieces via `tensor()`/
+`comul()`/`associator()`, which stay untagged themselves). Combining
+two elements tagged with *different* algebra *instances* raises
+`ValueError` -- deliberately by identity (`is`), not by equal
+parameters, so e.g. two separately-constructed `RestrictedSl2(p=3)`
+objects are *not* considered interchangeable; if that surprises you in
+an interactive session (re-running a cell that reconstructs `alg`
+invalidates old tagged Elements bound to the stale instance), that's
+the tradeoff for catching real cross-algebra mixups loudly instead of
+silently.
 
 This machinery lives entirely in `element.py`/`algebra.py` (generic,
 tiny, propagation-only -- see `_combine_alg`), not per-example, so every
 algebra gets it for free. It only affects code that opts in via
-`elt()`/`alg.mul(...)`; everything untagged (`Element.basis(key)`
-directly, which is what every example's internals use) behaves exactly
-as before.
+`elt()`/`alg.mul(...)`/`tensor()` on tagged inputs; everything untagged
+(`Element.basis(key)` directly, which is what every example's internals
+mostly use) behaves exactly as before.
 
 `Element.__pow__` (`E ** n`) is the same idea applied to repeated `*`:
 square-and-multiply (same pattern as `qring.CycloNum.__pow__`), requires
@@ -287,6 +296,18 @@ matching the paper's `f_i^+-`) since its generators are indexed), not
 part of the generic interface, since which named generators exist is
 algebra-specific.
 
+`Δ(elem)` and `ε(elem)` (`element.py`, exported from the package top
+level) are the same tag-driven dispatch idea applied to the coproduct
+and counit: `Δ(x)` is `x.alg.comul(x)`, `ε(x)` is `x.alg.counit(x)` (a
+scalar, not an `Element` -- `counit`'s return type), so which algebra's
+rule to use is read off the argument's `.alg` tag rather than named
+explicitly -- both require a tagged Element, same as `*`/`**`. Named
+with the actual Greek letters (Ingo's request; Python identifiers
+support Unicode letters per PEP 3131) rather than ASCII `Delta`/
+`epsilon`, to match how the coproduct/counit are written in the paper --
+IPython/Jupyter's `\Delta<Tab>`/`\varepsilon<Tab>` completion types them
+directly.
+
 `SymplecticFermionQ.e0`/`.e1` (the central idempotents) are tagged too,
 and are computed *once* in `__init__` and used directly everywhere
 internally (`_omega`, `_comul_K1`, `_antipode_K1`, `_antipode_f`,
@@ -296,15 +317,51 @@ Tagging an internal "plain `H`" piece like this and reusing it freely is
 safe, not just for the top-level generators: `self.mul(...)`
 unconditionally retags its result with `self` regardless of its
 arguments' tags ([algebra.py](src/hopfsym/algebra.py), `result.alg = self`
-at the end, no condition), and `tensor(...)` always builds a fresh,
-untagged `Element` regardless of its arguments' tags -- so a tagged
-intermediate can never leak an incorrect tag into an `H^{(x)n}` result
-like `Phi`/`comul(...)` (those still come out untagged, as intended), and
-two different tagged inputs from the *same* algebra instance never
-conflict. The only real hazard `_combine_alg` ever guards against is
-mixing Elements from two genuinely different algebra *instances* -- so
-tag any per-instance `H`-element piece you find yourself recomputing
-repeatedly, not just user-facing generators.
+at the end, no condition), and `tensor(a, b)` propagates `.alg` via
+`_combine_alg` the same way `+`/`-` do -- so tensoring two `self`-tagged
+pieces (e.g. `tensor(self.e1, self.e1)` inside `associator()`) gives a
+tagged `H^{(x)n}` result. That used to be avoided on the theory that a
+tagged `TensorKey` element would make `*` wrongly try `multiply_basis`
+on it; it no longer is, because `Element.__mul__` now checks arity
+first (`_arity`, reading `TensorKey`-ness off the basis keys) and routes
+n-fold tensor operands to `tensor_mul` instead -- see "Element *
+Element" above. Two different tagged inputs from the *same* algebra
+instance never conflict either way. The only real hazard `_combine_alg`
+ever guards against is mixing Elements from two genuinely different
+algebra *instances* -- so tag any per-instance `H`-element piece you
+find yourself recomputing repeatedly, not just user-facing generators.
+
+`permute_factors()`/`flip()` and `apply_to_factor()` propagate `.alg`
+the same way `tensor()` does -- the latter also tags the single-factor
+piece it hands to `func`, so `func` can itself be a tag-dispatching
+function like `Δ` (e.g. `apply_to_factor(da, 0, Δ)` for `(Δ (x) id)(da)`)
+when `elem` is tagged, not just `alg.comul`.
+
+`alg.tag(elem)` (`algebra.py`) tags a *copy* of an Element you got some
+way other than `elt()`/`mul()`/`Δ` -- typically a nullary structure
+element (`alg.associator()`, `alg.r_matrix()`, `alg.ribbon()`, ...),
+which comes back untagged since its own implementation builds it from
+untagged pieces. A copy, not an in-place tag, because several of those
+are cached per-instance (`r_matrix`/`ribbon`/`drinfeld`/`f_element`):
+tagging the cached object itself would leak the tag into every other
+caller that fetches the same cached value. `axioms.py` uses this
+wherever a check needs `Δ`/`ε` on a structure element directly (their
+own tag requirement, not satisfiable via `*`'s wildcard) or a product
+where *neither* side would otherwise be tagged -- see the docstrings of
+`check_pentagon`, `check_hexagon`, `check_antipode`,
+`check_evaluation_coevaluation`, `check_ribbon`,
+`check_s_delta_compatibility` for exactly which and why; most checks
+need no `tag()` calls at all, since one side of every product is
+already tagged (`alg.elt(...)`/`Δ(...)`) and `_combine_alg`'s wildcard
+lets that carry the untagged other side.
+
+`axioms.py` itself is written in this style throughout -- e.g.
+associativity reads `(ea * eb) * ec == ea * (eb * ec)` rather than
+`alg.mul(alg.mul(ea, eb), ec) == alg.mul(ea, alg.mul(eb, ec))`, and the
+hexagon axiom's nested `tensor_mul(alg, tensor_mul(alg, X, Y), Z)`
+chains become `X * Y * Z`. A pre-rewrite copy is kept at
+`src/hopfsym/axioms.py.bak` (untracked, gitignored -- a plain
+before/after reference, not a substitute for git history).
 
 ## Adding a new algebra
 

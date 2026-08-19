@@ -143,3 +143,19 @@ class QuasiHopfAlgebra:
         ``Element.__mul__``). ``*`` never means the tensor product; use
         ``tensor(a, b)`` explicitly for that."""
         return Element.basis(key, coeff, alg=self)
+
+    def tag(self, elem: Element) -> Element:
+        """A copy of ``elem`` tagged with this algebra, for an Element you
+        got some way other than ``elt()``/``mul()``/``Δ`` -- typically one
+        of the nullary structure elements (``alg.associator()``,
+        ``alg.r_matrix()``, ``alg.ribbon()``, ...), which come back
+        untagged since their own implementations build them from
+        untagged pieces. A *copy*, not an in-place tag, because several
+        of those are cached per-instance (``r_matrix``/``ribbon``/
+        ``drinfeld``/``f_element``): tagging the cached object itself
+        would leak the tag into every other caller that fetches the same
+        cached value. Lets you write e.g. ``Phi = alg.tag(alg.associator())``
+        once and then use ``*``/``Δ`` on ``Phi`` freely."""
+        result = Element(dict(elem.terms))
+        result.alg = self
+        return result

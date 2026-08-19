@@ -59,6 +59,17 @@ def _key_from_factors(factors: tuple):
     return factors[0] if len(factors) == 1 else TensorKey(factors)
 
 
+def _arity(elem: "Element") -> int:
+    """1 for a plain (single-factor) Element, n for an n-fold tensor
+    Element (basis keys are length-n TensorKeys); 1 for the zero element
+    itself (arity is moot there -- dispatching either way below gives
+    the correct empty result)."""
+    if not elem.terms:
+        return 1
+    key = next(iter(elem.terms))
+    return len(key) if isinstance(key, TensorKey) else 1
+
+
 def _combine_alg(a, b):
     """Resolve the ``.alg`` tag of a result from two operands' tags.
     ``None`` acts as a wildcard (an untagged Element, e.g. anything
@@ -86,15 +97,20 @@ class Element:
     ``alg``, if set, tags an Element as belonging to a specific
     :class:`~hopfsym.algebra.QuasiHopfAlgebra` instance -- purely so that
     ``*`` (and ``**``, repeated ``*``) between two such Elements can mean
-    that algebra's product (``alg.mul``) instead of raising (see
-    ``__mul__``/``__pow__``). It is optional and propagated automatically
-    through ``+``/``-``/scalar ``*``; nothing else in this module ever
-    reads or requires it, so untagged use (``alg=None`` everywhere, the
-    default) behaves exactly as before this was added. Get a tagged
-    Element via ``QuasiHopfAlgebra.elt()`` (or a per-example generator
-    accessor built on it, e.g. ``RestrictedSl2.E``) or
-    ``Element.basis(key, alg=...)``, or implicitly from ``alg.mul(...)``'s
-    result.
+    that algebra's product instead of raising (see ``__mul__``/
+    ``__pow__``): ``alg.mul`` for two plain (single-factor) Elements, or
+    the componentwise tensor-algebra product (``tensor_mul``,
+    ``(a(x)b)*(c(x)d) = (a*c)(x)(b*d)``) when either side is an n-fold
+    tensor Element -- which arity applies is read off the operands'
+    basis keys, not tracked separately. It is optional and propagated
+    automatically through ``+``/``-``/scalar ``*``/``tensor()``; nothing
+    else in this module ever reads or requires it, so untagged use
+    (``alg=None`` everywhere, the default) behaves exactly as before
+    this was added. Get a tagged Element via ``QuasiHopfAlgebra.elt()``
+    (or a per-example generator accessor built on it, e.g.
+    ``RestrictedSl2.E``) or ``Element.basis(key, alg=...)``, or
+    implicitly from ``alg.mul(...)``/``tensor(...)``'s result when the
+    inputs were tagged.
     """
 
     __slots__ = ("terms", "alg")
@@ -156,6 +172,17 @@ class Element:
         if isinstance(other, Element):
             resolved = _combine_alg(self.alg, other.alg)
             if resolved is not None:
+                if _arity(self) > 1 or _arity(other) > 1:
+                    # One or both operands are n-fold tensor elements
+                    # (e.g. built via tensor(a, b)): `*` means the
+                    # componentwise tensor-algebra product,
+                    # (a(x)b)*(c(x)d) = (a*c)(x)(b*d), i.e. tensor_mul --
+                    # not multiply_basis, which only knows plain,
+                    # single-factor basis keys. tensor_mul itself raises
+                    # if the two arities don't actually match.
+                    result = tensor_mul(resolved, self, other)
+                    result.alg = resolved
+                    return result
                 return resolved.mul(self, other)
             raise TypeError(
                 "Element * Element is ambiguous (algebra product or tensor?); "
@@ -181,7 +208,13 @@ class Element:
                 "or alg.E/alg.F/alg.K) so `**` knows which algebra's product to use"
             )
         alg = self.alg
+        # The multiplicative identity of matching tensor arity: alg.unit()
+        # itself for a plain (arity-1) Element, 1(x)1(x)...(x)1 (arity
+        # copies) for an n-fold tensor Element -- so n=0 and the
+        # square-and-multiply loop below both stay correct at any arity.
         result = alg.unit()
+        for _ in range(_arity(self) - 1):
+            result = tensor(result, alg.unit())
         result.alg = alg
         base = self
         while n > 0:
@@ -210,12 +243,22 @@ def tensor(a: Element, b: Element) -> Element:
     """The bilinear tensor product of two elements. Repeated application
     (e.g. ``tensor(tensor(a, b), c)`` or ``tensor(a, tensor(b, c))``)
     flattens automatically into one n-fold TensorKey, regardless of how
-    the calls are nested."""
+    the calls are nested.
+
+    Propagates ``.alg`` the same way ``+``/``-`` do (``_combine_alg``,
+    ``None`` as wildcard): tensoring two elements tagged with the same
+    algebra gives a tagged n-fold tensor Element, so e.g.
+    ``tensor(a, b) * tensor(c, d)`` can mean ``tensor(a*c, b*d)`` (see
+    ``Element.__mul__``) rather than raising. Tensoring an untagged
+    piece (the common case -- most internals use plain
+    ``Element.basis(key)``) still yields an untagged result, exactly as
+    before."""
     result = Element()
     for k1, c1 in a.terms.items():
         for k2, c2 in b.terms.items():
             key = _key_from_factors(_factors_of(k1) + _factors_of(k2))
             result.add_term(key, c1 * c2)
+    result.alg = _combine_alg(a.alg, b.alg)
     return result
 
 
@@ -227,12 +270,15 @@ def permute_factors(elem: Element, perm: Tuple[int, ...]) -> Element:
     ``tens[a2,a3,a1]``). Used for axioms that need a specific leg
     permutation of the associator, e.g. the hexagon axiom, and generalises
     the original Mathematica code's ``flip`` (the 2-factor case,
-    ``perm=(1,0)``)."""
+    ``perm=(1,0)``)). Propagates ``.alg`` from ``elem`` (same convention
+    as ``tensor()``), since a permutation doesn't change which algebra
+    the factors belong to."""
     result = Element()
     for key, coeff in elem.terms.items():
         factors = _factors_of(key)
         new_factors = tuple(factors[i] for i in perm)
         result.add_term(_key_from_factors(new_factors), coeff)
+    result.alg = elem.alg
     return result
 
 
@@ -249,16 +295,23 @@ def apply_to_factor(elem: Element, position: int, func: Callable[[Element], Elem
 
     This is the generic building block behind axiom checks that need
     things like ``(Delta (x) id)(x)`` or ``(id (x) id (x) Delta)(x)``.
-    """
+
+    Propagates ``.alg`` from ``elem`` to both the single-factor piece
+    handed to ``func`` and the overall result (same convention as
+    ``tensor()``), so ``func`` can itself be a tag-dispatching function
+    like ``Δ`` (e.g. ``apply_to_factor(da, 0, Δ)`` for ``(Δ (x) id)(da)``)
+    when ``elem`` is tagged; an untagged ``elem`` behaves exactly as
+    before (``func`` receives an untagged piece, as it always did)."""
     result = Element()
     for key, coeff in elem.terms.items():
         factors = _factors_of(key)
         before, target, after = factors[:position], factors[position], factors[position + 1:]
-        mapped = func(Element.basis(target, coeff))
+        mapped = func(Element.basis(target, coeff, alg=elem.alg))
         for mkey, mcoeff in mapped.terms.items():
             mfactors = _factors_of(mkey)
             newfactors = before + mfactors + after
             result.add_term(_key_from_factors(newfactors), mcoeff)
+    result.alg = elem.alg
     return result
 
 
@@ -290,3 +343,47 @@ def tensor_mul(alg, a: Element, b: Element) -> Element:
             for k, c in piece.terms.items():
                 result.add_term(k, scalar * c)
     return result
+
+
+def Δ(elem: Element) -> Element:
+    """The coproduct, dispatched via ``elem``'s ``.alg`` tag: ``Δ(x)`` is
+    ``alg.comul(x)`` for whichever algebra ``x`` is tagged with -- so which
+    algebra's coproduct rule to use is read off the argument itself, the
+    same way ``*`` reads ``.alg`` off its operands to pick a product (see
+    ``Element.__mul__``). Requires a tagged Element (e.g. via ``alg.elt(key)``
+    or a generator accessor like ``alg.E``/``alg.K``) for the same reason
+    ``*`` does: there is no algebra to call ``comul`` on otherwise --
+    untagged, call ``alg.comul(elem)`` directly instead.
+
+    The result is itself tagged with the same algebra -- even though a
+    per-example ``comul()`` implementation typically builds its result
+    from untagged pieces internally -- so e.g. ``Δ(a) * Δ(b)`` (the
+    tensor-algebra product in H (x) H, via ``Element.__mul__``'s
+    arity-aware dispatch) works directly instead of needing
+    ``tensor_mul(alg, Δ(a), Δ(b))`` spelled out."""
+    if elem.alg is None:
+        raise TypeError(
+            "Δ(elem) requires a tagged Element (e.g. via alg.elt(key) or a "
+            "generator accessor like alg.E/alg.K) so it knows which algebra's "
+            "comul to use -- or call alg.comul(elem) directly"
+        )
+    result = elem.alg.comul(elem)
+    result.alg = elem.alg
+    return result
+
+
+def ε(elem: Element):
+    """The counit, dispatched via ``elem``'s ``.alg`` tag: ``ε(x)`` is
+    ``alg.counit(x)`` for whichever algebra ``x`` is tagged with -- the
+    same dispatch as ``Δ``, just for the counit instead of the coproduct.
+    Returns a scalar (a ``QRational``/``CycloNum``/plain number, whatever
+    that algebra's ``counit`` returns), not an ``Element``. Requires a
+    tagged Element for the same reason ``Δ``/``*`` do -- untagged, call
+    ``alg.counit(elem)`` directly instead."""
+    if elem.alg is None:
+        raise TypeError(
+            "ε(elem) requires a tagged Element (e.g. via alg.elt(key) or a "
+            "generator accessor like alg.E/alg.K) so it knows which algebra's "
+            "counit to use -- or call alg.counit(elem) directly"
+        )
+    return elem.alg.counit(elem)
