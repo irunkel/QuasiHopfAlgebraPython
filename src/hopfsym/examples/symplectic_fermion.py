@@ -105,6 +105,21 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._antipode_basis_cache = {}
         self._comul_basis_cache = {}
 
+        # e0 = (1+K^2)/2, e1 = (1-K^2)/2: central idempotents, used all
+        # over the structure maps below -- computed once here (tagged,
+        # see Element.__mul__) rather than re-derived on every call, and
+        # used directly as self.e0/self.e1 everywhere internally too
+        # (safe to tag: self.mul(...) always retags its own result with
+        # self regardless of its arguments' tags, and tensor(...) always
+        # builds a fresh untagged Element, so tagging e0/e1 can't leak an
+        # incorrect tag into a H^{(x)n} result like Phi or comul(...)).
+        one = self.unit()
+        K2 = self._K(2)
+        self.e0 = Fraction(1, 2) * (one + K2)
+        self.e1 = Fraction(1, 2) * (one - K2)
+        self.e0.alg = self
+        self.e1.alg = self
+
     # -- scalars --------------------------------------------------------
     def i(self) -> CycloNum:
         """The imaginary unit, as an element of Q(zeta_8)."""
@@ -135,12 +150,28 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         bits[pos] = 1
         return Element.basis((tuple(bits), 0))
 
-    def _idempotents(self):
-        one = self.unit()
-        K2 = self._K(2)
-        e0 = Fraction(1, 2) * (one + K2)
-        e1 = Fraction(1, 2) * (one - K2)
-        return e0, e1
+    @property
+    def K(self) -> Element:
+        """The generator K, tagged (see Element.__mul__) -- e.g.
+        ``alg.K ** 4 == alg.unit()``."""
+        e = self._K(1)
+        e.alg = self
+        return e
+
+    def f(self, i: int, eps: str) -> Element:
+        """The generator f_i^eps (eps = '+' or '-'), tagged -- e.g.
+        ``alg.f(1, '+') * alg.f(1, '-')`` is ``alg.mul(...)``. i is
+        1-indexed, matching the paper's f_i^+- notation (built on top of
+        the position-indexed ``_f``, which stays as the untagged,
+        0-indexed helper used internally by ``_comul_f``/``_antipode_f``)."""
+        if eps not in ("+", "-"):
+            raise ValueError("eps must be '+' or '-'")
+        if not 1 <= i <= self.N:
+            raise ValueError(f"i must be between 1 and N={self.N}")
+        pos = 2 * (i - 1) + (0 if eps == "+" else 1)
+        e = self._f(pos)
+        e.alg = self
+        return e
 
     # -- product ----------------------------------------------------------
     def multiply_basis(self, b1: BasisKey, b2: BasisKey) -> Element:
@@ -179,12 +210,13 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
             t1, t2 = tokens[idx], tokens[idx + 1]
 
             if t1[0] == "K" and t2[0] == "K":
+                # K^a K^b = K^(a+b mod 4)  (from K^4 = 1)
                 merged = (t1[1] + t2[1]) % 4
                 new_tokens = tokens[:idx] + ([("K", merged)] if merged else []) + tokens[idx + 2:]
                 return self._reduce_word(new_tokens)
 
             if t1[0] == "K" and t2[0] == "f":
-                # K^a f = (-1)^a f K^a  (from {f, K} = 0)
+                # K^a f = (-1)^a f K^a  (from {f_i^+-, K} = 0)
                 sign = -1 if t1[1] % 2 else 1
                 new_tokens = tokens[:idx] + [t2, t1] + tokens[idx + 2:]
                 result = self._reduce_word(new_tokens)
@@ -193,7 +225,8 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
             if t1[0] == "f" and t2[0] == "f":
                 pos1, pos2 = t1[1], t2[1]
                 if pos1 == pos2:
-                    return Element.zero()  # (f_i^eps)^2 = 0
+                    # (f_i^eps)^2 = 0  (from {f_i^eps, f_j^eps} = 0 at i=j)
+                    return Element.zero()
                 i1, i2 = pos1 // 2, pos2 // 2
                 if i1 == i2:
                     # same i, opposite sign (pos1 != pos2 but same pair):
@@ -201,13 +234,16 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
                     if pos1 < pos2:
                         continue  # already correct, keep scanning
                     # wrong order: f_i^- f_i^+ = e1 - f_i^+ f_i^-
+                    # (from {f_i^+, f_j^-} = delta_ij * e1 at i=j)
                     prefix, suffix = tokens[:idx], tokens[idx + 2:]
-                    _, e1 = self._idempotents()
-                    correction = self._sandwich(prefix, e1, suffix)
+                    correction = self._sandwich(prefix, self.e1, suffix)
                     swapped = prefix + [("f", pos2), ("f", pos1)] + suffix
                     return correction - self._reduce_word(swapped)
                 if pos1 > pos2:
-                    # different i, out of order: pure anticommutation
+                    # different i, out of order: pure anticommutation, no
+                    # correction term -- both {f_i^eps,f_j^eps} = 0 (same
+                    # sign) and {f_i^+,f_j^-} = delta_ij*e1 (opposite sign)
+                    # collapse to this once i != j, since delta_ij = 0 either way.
                     new_tokens = tokens[:idx] + [t2, t1] + tokens[idx + 2:]
                     return -1 * self._reduce_word(new_tokens)
                 continue  # different i, already in order
@@ -231,14 +267,12 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     # -- coproduct --------------------------------------------------------
     def _omega(self, sign: int) -> Element:
         """omega_+- = (e0 +- i*e1) . K."""
-        e0, e1 = self._idempotents()
-        combo = e0 + (sign * self.i()) * e1
+        combo = self.e0 + (sign * self.i()) * self.e1
         return self.mul(combo, self._K(1))
 
     def _comul_K1(self) -> Element:
         """Delta(K) = K (x) K - (1+(-1)^N) (e1.K) (x) (e1.K)."""
-        _, e1 = self._idempotents()
-        e1K = self.mul(e1, self._K(1))
+        e1K = self.mul(self.e1, self._K(1))
         K = self._K(1)
         correction = (1 + (-1) ** self.N) * tensor(e1K, e1K)
         return tensor(K, K) - correction
@@ -298,8 +332,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     # -- antipode -------------------------------------------------------------
     def _antipode_K1(self) -> Element:
         """S(K) = (e0 + (-1)^N e1) . K."""
-        e0, e1 = self._idempotents()
-        combo = e0 + Fraction((-1) ** self.N) * e1
+        combo = self.e0 + Fraction((-1) ** self.N) * self.e1
         return self.mul(combo, self._K(1))
 
     def _antipode_K_power(self, k: int) -> Element:
@@ -316,8 +349,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         if cached is not None:
             return cached
         sign = 1 if pos % 2 == 0 else -1
-        e0, e1 = self._idempotents()
-        combo = e0 + (sign * ((-1) ** self.N) * self.i()) * e1
+        combo = self.e0 + (sign * ((-1) ** self.N) * self.i()) * self.e1
         result = self.mul(self.mul(self._f(pos), combo), self._K(1))
         self._antipode_f_cache[pos] = result
         return result
@@ -346,27 +378,24 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     def _assoc_third_factor(self, i_sign: int) -> Element:
         """(K^N - 1).e0 + (beta^2 (i_sign*i*K)^N - 1).e1, the third tensor
         leg of Phi (i_sign=+1) / Phi^-1 (i_sign=-1)."""
-        e0, e1 = self._idempotents()
         one = self.unit()
         KN = self._K(self.N)
-        term_a = self.mul(KN - one, e0)
+        term_a = self.mul(KN - one, self.e0)
         scalar = self.beta_scalar() ** 2 * (i_sign * self.i()) ** self.N
         bracket_b = scalar * KN - one
-        term_b = self.mul(bracket_b, e1)
+        term_b = self.mul(bracket_b, self.e1)
         return term_a + term_b
 
     def associator(self) -> Element:
         one = self.unit()
-        _, e1 = self._idempotents()
         term1 = tensor(tensor(one, one), one)
-        term2 = tensor(tensor(e1, e1), self._assoc_third_factor(+1))
+        term2 = tensor(tensor(self.e1, self.e1), self._assoc_third_factor(+1))
         return term1 + term2
 
     def associator_inv(self) -> Element:
         one = self.unit()
-        _, e1 = self._idempotents()
         term1 = tensor(tensor(one, one), one)
-        term2 = tensor(tensor(e1, e1), self._assoc_third_factor(-1))
+        term2 = tensor(tensor(self.e1, self.e1), self._assoc_third_factor(-1))
         return term1 + term2
 
     def alpha(self) -> Element:
@@ -374,9 +403,8 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
 
     def beta(self) -> Element:
         """Sbeta = e0 + beta^2 (iK)^N e1."""
-        e0, e1 = self._idempotents()
         scalar = self.beta_scalar() ** 2 * self.i() ** self.N
-        return e0 + self.mul(scalar * self._K(self.N), e1)
+        return self.e0 + self.mul(scalar * self._K(self.N), self.e1)
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:

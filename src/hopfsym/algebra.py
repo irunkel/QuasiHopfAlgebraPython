@@ -72,8 +72,11 @@ class QuasiHopfAlgebra:
       paper), built from Phi, Delta, S, alpha and beta -- no R-matrix
       needed (see ``axioms.check_s_delta_compatibility``).
 
-    ``mul`` (the bilinear extension of ``multiply_basis``) is provided
-    here and should not need to be overridden.
+    ``mul`` (the bilinear extension of ``multiply_basis``) and ``elt``
+    (a convenience for building a basis Element tagged with this algebra,
+    so that ``*`` between two such Elements means ``mul`` -- see
+    ``Element.__mul__``) are provided here and should not need to be
+    overridden.
     """
 
     # -- to be implemented by subclasses -----------------------------
@@ -129,4 +132,14 @@ class QuasiHopfAlgebra:
                 prod = self.multiply_basis(k1, k2)
                 for k3, c3 in prod.terms.items():
                     result.add_term(k3, c1 * c2 * c3)
+        result.alg = self
         return result
+
+    def elt(self, key, coeff=1) -> Element:
+        """A basis Element tagged with this algebra: ``Element.basis(key,
+        coeff, alg=self)``. Tagged Elements let ``*`` mean this algebra's
+        product instead of raising -- e.g. ``E = alg.elt((1,0,0));
+        F = alg.elt((0,1,0)); E * F`` is ``alg.mul(E, F)`` (see
+        ``Element.__mul__``). ``*`` never means the tensor product; use
+        ``tensor(a, b)`` explicitly for that."""
+        return Element.basis(key, coeff, alg=self)

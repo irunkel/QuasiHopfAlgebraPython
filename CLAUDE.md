@@ -204,11 +204,14 @@ Element (element.py)
     a dict {basis_key: coefficient}. Doesn't know what a basis key
     means -- that's up to the algebra. TensorKey marks a basis key as
     an n-fold tensor of other keys (tensor(), apply_to_factor(),
-    tensor_mul() build/manipulate these generically).
+    tensor_mul() build/manipulate these generically). An optional
+    ``.alg`` tag (None by default, propagated through +/-/scalar*) lets
+    ``E * F`` mean ``alg.mul(E, F)`` when both sides are tagged with the
+    same algebra -- see "Element * Element" below.
 
 QuasiHopfAlgebra (algebra.py)
-    the interface: basis(), unit(), multiply_basis() [+ mul(), given
-    for free], comul(), counit(), antipode(), associator(),
+    the interface: basis(), unit(), multiply_basis() [+ mul() and elt(),
+    given for free], comul(), counit(), antipode(), associator(),
     associator_inv(), alpha(), beta() -- required; r_matrix(), ribbon(),
     drinfeld(), f_element() -- optional (quasi-triangular/ribbon
     structure only, default to NotImplementedError).
@@ -238,6 +241,70 @@ examples/symplectic_fermion.py
     central-idempotent correction term, not q-powers or a recursive
     commutator). Only the quasi-Hopf data, not r_matrix/ribbon/etc yet.
 ```
+
+### `Element * Element`: tagged elements, for interactive use
+
+By default, `E * F` for two `Element`s raises `TypeError` -- with no
+algebra reference, `Element` genuinely cannot tell whether `*` should
+mean the algebra product or the tensor product (and `Element` is
+deliberately kept algebra-agnostic, see above). `alg.elt(key)` (and
+`alg.mul(...)`'s return value) tag the `Element` with `alg`
+(`Element.alg`, default `None`); `*` between two `Element`s with the
+*same* `.alg` calls `alg.mul` -- this was Ingo's explicit request
+(`*` should only ever mean the algebra product, never tensor; use
+`tensor(a, b)` for that). `None` acts as a wildcard (same convention as
+`CycloNum`'s field-degree `None`), so a tagged element still combines
+fine with an untagged one (e.g. `alg.unit()`, or anything from
+`tensor()`/`comul()`/`associator()`, which stay untagged on purpose --
+tagging a `H^{(x)n}` element would let `*` wrongly try `multiply_basis`
+on a `TensorKey`). Combining two elements tagged with *different*
+algebra *instances* raises `ValueError` -- deliberately by identity
+(`is`), not by equal parameters, so e.g. two separately-constructed
+`RestrictedSl2(p=3)` objects are *not* considered interchangeable; if
+that surprises you in an interactive session (re-running a cell that
+reconstructs `alg` invalidates old tagged Elements bound to the stale
+instance), that's the tradeoff for catching real cross-algebra mixups
+loudly instead of silently.
+
+This machinery lives entirely in `element.py`/`algebra.py` (generic,
+tiny, propagation-only -- see `_combine_alg`), not per-example, so every
+algebra gets it for free. It only affects code that opts in via
+`elt()`/`alg.mul(...)`; everything untagged (`Element.basis(key)`
+directly, which is what every example's internals use) behaves exactly
+as before.
+
+`Element.__pow__` (`E ** n`) is the same idea applied to repeated `*`:
+square-and-multiply (same pattern as `qring.CycloNum.__pow__`), requires
+a tagged `Element` for the same reason `*` does, `n=0` gives the
+algebra's unit. `RestrictedSl2.E`/`.F`/`.K` are properties (no parens)
+returning `self.elt((1,0,0))` etc. -- the ergonomic way to get tagged
+generators in the first place, so you can write `alg.E * alg.F` or
+`alg.E ** p` directly rather than remembering the basis-key convention.
+These accessors are per-example (`QuantumSl2Quasi` could get the
+identical `E`/`F`/`K` properties; `SymplecticFermionQ` instead has
+`K` (property) and `f(i, eps)` (method, `eps = '+'`/`'-'`, `i` 1-indexed
+matching the paper's `f_i^+-`) since its generators are indexed), not
+part of the generic interface, since which named generators exist is
+algebra-specific.
+
+`SymplecticFermionQ.e0`/`.e1` (the central idempotents) are tagged too,
+and are computed *once* in `__init__` and used directly everywhere
+internally (`_omega`, `_comul_K1`, `_antipode_K1`, `_antipode_f`,
+`_assoc_third_factor`, `associator`, `associator_inv`, `beta` all read
+`self.e0`/`self.e1` -- there is no `_idempotents()` method any more).
+Tagging an internal "plain `H`" piece like this and reusing it freely is
+safe, not just for the top-level generators: `self.mul(...)`
+unconditionally retags its result with `self` regardless of its
+arguments' tags ([algebra.py](src/hopfsym/algebra.py), `result.alg = self`
+at the end, no condition), and `tensor(...)` always builds a fresh,
+untagged `Element` regardless of its arguments' tags -- so a tagged
+intermediate can never leak an incorrect tag into an `H^{(x)n}` result
+like `Phi`/`comul(...)` (those still come out untagged, as intended), and
+two different tagged inputs from the *same* algebra instance never
+conflict. The only real hazard `_combine_alg` ever guards against is
+mixing Elements from two genuinely different algebra *instances* -- so
+tag any per-instance `H`-element piece you find yourself recomputing
+repeatedly, not just user-facing generators.
 
 ## Adding a new algebra
 
@@ -422,3 +489,39 @@ network-egress restriction in the Cowork sandbox mid-project, and the
 dependency-free rewrite turned out better anyway (exact arithmetic, no
 `simplify()` black box, works instantly in any environment including
 inside Claude Code CLI with zero setup).
+
+### Randomised, not fixed: both *which basis elements* and *which model*
+
+Two independent layers of randomisation, both deliberate, both without a
+fixed seed -- so the test suite exercises different cases on every run
+rather than silently re-checking the same handful forever:
+
+- **Which basis elements a check samples**: `axioms.py`'s `_sample_*`
+  helpers draw a fresh random seed every call (`axioms.SAMPLE_SIZE`,
+  module-level, governs how many). Every check that samples reports its
+  seed the moment it finds a failure -- unconditionally, not gated by
+  `verbose`, since that's the one thing you always want to see, even in
+  an otherwise-quiet run (see axioms.py's module docstring and
+  `_report_seed`). `check_r_matrix_intertwiner` alone defaults to a
+  fraction of `SAMPLE_SIZE` (exact arithmetic against a several-hundred
+  term R-matrix makes it the one check where the default sample count
+  matters for runtime).
+- **Which algebra instance a test runs against** (p, t for
+  `QuantumSl2Quasi`/`RestrictedSl2`; N, beta_power for
+  `SymplecticFermionQ`): `tests/_random_model.py`'s
+  `random_p`/`random_p_t`/`random_N`/`random_N_beta_power` pick within
+  bounds tuned for runtime (documented inline there and in each call
+  site -- e.g. hexagon/ribbon checks stay off the wider range because
+  they were individually timed in the tens of seconds to minutes at
+  p=4). Reported via `subTest(p=..., t=...)` (shown automatically by
+  unittest on failure), not a tracked seed -- there's nothing to
+  "reproduce" beyond the actual small-integer values themselves.
+
+Not every test uses either: things that verify one specific formula or
+edge case against the paper/Mathematica reference (`test_dimension`,
+`test_rejects_small_p`, the `PaperRemarkTests` cross-checks, `test_p2_exhaustive`,
+etc.) stay at fixed, deliberately-chosen parameters -- randomising those
+would trade guaranteed coverage of a known-important case for nothing.
+The random treatment is specifically for the "does this axiom hold in
+general" checks, where always testing the same lucky/unlucky instance
+was the actual gap being closed.

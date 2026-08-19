@@ -16,11 +16,14 @@ from fractions import Fraction
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from hopfsym import axioms
 from hopfsym.element import Element, tensor, tensor_mul
 from hopfsym.examples import QuantumSl2Quasi
 from hopfsym.qring import CycloNum
+
+from _random_model import random_p_t
 
 
 def _RRsec(alg):
@@ -53,50 +56,43 @@ def _RRsec(alg):
 
 
 class RMatrixTests(unittest.TestCase):
-    def _check(self, p, t, samples=None):
+    # p in [2,4]: check_r_matrix_intertwiner now defaults to a fraction
+    # of SAMPLE_SIZE (see axioms.py), so p=4 no longer needs the manual
+    # reduced-samples workaround this used to have -- ~5s instead of
+    # ~26s. RRsec is an exhaustive, independent check of the R-matrix
+    # itself, so no sampling concern there regardless of p.
+    def _check(self, p, t):
         alg = QuantumSl2Quasi(p=p, t=t)
         with self.subTest(p=p, t=t, check="RRsec cross-check"):
             self.assertEqual(alg.r_matrix(), _RRsec(alg))
         with self.subTest(p=p, t=t, check="intertwiner"):
-            self.assertTrue(axioms.check_r_matrix_intertwiner(alg, samples=samples, verbose=False))
+            self.assertTrue(axioms.check_r_matrix_intertwiner(alg, verbose=True))
 
-    def test_p2_t1(self):
-        self._check(p=2, t=1)
+    def test_random_1(self):
+        self._check(*random_p_t())
 
-    def test_p2_t3(self):
-        self._check(p=2, t=3)
+    def test_random_2(self):
+        self._check(*random_p_t())
 
-    def test_p3_t1(self):
-        self._check(p=3, t=1)
-
-    def test_p3_t3(self):
-        self._check(p=3, t=3)
-
-    def test_p4_t1(self):
-        # R has 4p^3 = 256 raw terms at p=4, and the intertwiner check
-        # multiplies it against Delta(a) in H (x) H for each sample --
-        # exact arithmetic in Q(zeta_16) makes that real work per sample
-        # (unlike the smaller structure maps elsewhere in this package),
-        # so use a handful of samples rather than the default 10 to keep
-        # this test's runtime reasonable; the RRsec cross-check above is
-        # already an exhaustive, independent check of the R-matrix itself.
-        alg = QuantumSl2Quasi(p=4, t=1)
-        self._check(p=4, t=1, samples=list(alg.basis())[::37])
+    def test_random_3(self):
+        self._check(*random_p_t())
 
 
 class HexagonTests(unittest.TestCase):
     # The hexagon axioms are a single (no-sampling) check per (p, t) --
-    # like the pentagon axiom, but heavier (it also involves R, so it's
-    # not included in axioms.check_all and left at p=2,3 here; see
-    # CLAUDE.md's performance notes if p=4 is ever needed regularly).
-    def test_p2_t1(self):
-        self.assertTrue(axioms.check_hexagon(QuantumSl2Quasi(p=2, t=1), verbose=False))
+    # like the pentagon axiom, but heavier (it also involves R): p=4 was
+    # individually timed at ~61s (see CLAUDE.md's performance notes), so
+    # this stays bounded to p in [2,3] rather than using the default
+    # random_p_t() range.
+    def _check(self, p, t):
+        with self.subTest(p=p, t=t):
+            self.assertTrue(axioms.check_hexagon(QuantumSl2Quasi(p=p, t=t), verbose=True))
 
-    def test_p2_t3(self):
-        self.assertTrue(axioms.check_hexagon(QuantumSl2Quasi(p=2, t=3), verbose=False))
+    def test_random_1(self):
+        self._check(*random_p_t(max_p=3))
 
-    def test_p3_t1(self):
-        self.assertTrue(axioms.check_hexagon(QuantumSl2Quasi(p=3, t=1), verbose=False))
+    def test_random_2(self):
+        self._check(*random_p_t(max_p=3))
 
 
 def _mon2(alg):
@@ -127,22 +123,31 @@ def _mon2(alg):
 
 
 class MonodromyTests(unittest.TestCase):
-    def test_cross_check(self):
-        for p, t in [(2, 1), (2, 3), (3, 1), (3, 3)]:
-            with self.subTest(p=p, t=t):
-                alg = QuantumSl2Quasi(p=p, t=t)
-                self.assertEqual(alg.monodromy(), _mon2(alg))
+    # p in [2,3]: matches the original hardcoded set (no p=4 was ever
+    # validated here).
+    def test_random_1(self):
+        p, t = random_p_t(max_p=3)
+        alg = QuantumSl2Quasi(p=p, t=t)
+        with self.subTest(p=p, t=t):
+            self.assertEqual(alg.monodromy(), _mon2(alg))
+
+    def test_random_2(self):
+        p, t = random_p_t(max_p=3)
+        alg = QuantumSl2Quasi(p=p, t=t)
+        with self.subTest(p=p, t=t):
+            self.assertEqual(alg.monodromy(), _mon2(alg))
 
 
 class EvalCoevalTests(unittest.TestCase):
-    def test_p2_t1(self):
-        self.assertTrue(axioms.check_evaluation_coevaluation(QuantumSl2Quasi(p=2, t=1), verbose=False))
+    def _check(self, p, t):
+        with self.subTest(p=p, t=t):
+            self.assertTrue(axioms.check_evaluation_coevaluation(QuantumSl2Quasi(p=p, t=t), verbose=True))
 
-    def test_p3_t3(self):
-        self.assertTrue(axioms.check_evaluation_coevaluation(QuantumSl2Quasi(p=3, t=3), verbose=False))
+    def test_random_1(self):
+        self._check(*random_p_t())
 
-    def test_p4_t1(self):
-        self.assertTrue(axioms.check_evaluation_coevaluation(QuantumSl2Quasi(p=4, t=1), verbose=False))
+    def test_random_2(self):
+        self._check(*random_p_t())
 
 
 class RibbonTests(unittest.TestCase):
@@ -163,6 +168,10 @@ class RibbonTests(unittest.TestCase):
             i = CycloNum.power(4 * p, p)
             self.assertEqual(gauss_sum * gauss_sum, Fraction(-2 * p) * i)
 
+    # p in [2,3]: check_ribbon at p=4 was individually timed at over two
+    # minutes (M.Delta(v) against a large monodromy element) -- see
+    # CLAUDE.md's performance notes -- so this stays off the default
+    # random_p_t() range.
     def _check(self, p, t):
         alg = QuantumSl2Quasi(p=p, t=t)
         with self.subTest(p=p, t=t, check="S(v) == v"):
@@ -170,37 +179,29 @@ class RibbonTests(unittest.TestCase):
         with self.subTest(p=p, t=t, check="eps(v) == 1"):
             self.assertEqual(alg.counit(alg.ribbon()), 1)
         with self.subTest(p=p, t=t, check="full check_ribbon"):
-            self.assertTrue(axioms.check_ribbon(alg, verbose=False))
+            self.assertTrue(axioms.check_ribbon(alg, verbose=True))
 
-    def test_p2_t1(self):
-        self._check(p=2, t=1)
+    def test_random_1(self):
+        self._check(*random_p_t(max_p=3))
 
-    def test_p2_t3(self):
-        self._check(p=2, t=3)
-
-    def test_p3_t1(self):
-        self._check(p=3, t=1)
+    def test_random_2(self):
+        self._check(*random_p_t(max_p=3))
 
 
 class FElementTests(unittest.TestCase):
     def _check(self, p, t):
-        alg = QuantumSl2Quasi(p=p, t=t)
-        self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=False))
+        with self.subTest(p=p, t=t):
+            alg = QuantumSl2Quasi(p=p, t=t)
+            self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
 
-    def test_p2_t1(self):
-        self._check(p=2, t=1)
+    def test_random_1(self):
+        self._check(*random_p_t())
 
-    def test_p2_t3(self):
-        self._check(p=2, t=3)
+    def test_random_2(self):
+        self._check(*random_p_t())
 
-    def test_p3_t1(self):
-        self._check(p=3, t=1)
-
-    def test_p3_t3(self):
-        self._check(p=3, t=3)
-
-    def test_p4_t1(self):
-        self._check(p=4, t=1)
+    def test_random_3(self):
+        self._check(*random_p_t())
 
 
 if __name__ == "__main__":

@@ -30,6 +30,20 @@ exhaustive per-element checking gets expensive fast (each one expands
 the coproduct, which itself can have many terms). Pass
 ``samples=alg.basis()`` explicitly for an exhaustive check when you
 want one (e.g. in a one-off regression test for a small algebra).
+
+The sample itself is drawn with a *fresh random seed every call* (not a
+fixed one) -- so running the suite twice exercises different basis
+elements each time, rather than silently re-checking the same handful
+forever. The tradeoff (a failure isn't automatically reproducible just
+by re-running) is covered by every check printing the seed it used the
+moment it finds a failure -- unconditionally, not gated by ``verbose``,
+since that's the one piece of failure output you always want, even in
+a quiet test run. ``SAMPLE_SIZE`` (module-level, not baked into any
+function's default arguments, so it can be changed at runtime, e.g.
+``axioms.SAMPLE_SIZE = 20`` for a slower but more thorough run) is the
+shared baseline sample count; ``check_r_matrix_intertwiner`` is the one
+check expensive enough (exact arithmetic against a several-hundred-term
+R-matrix) to default to a fraction of it instead.
 """
 
 from __future__ import annotations
@@ -38,23 +52,55 @@ import random
 
 from .element import Element, TensorKey, apply_to_factor, flip, tensor_mul
 
+# Baseline number of random basis elements/pairs/triples a check samples
+# when the caller doesn't pass `samples=` explicitly. Deliberately looked
+# up at call time (see _sample_* below) rather than baked into a function
+# default, so `axioms.SAMPLE_SIZE = ...` actually takes effect.
+SAMPLE_SIZE = 6
 
-def _sample_pairs(alg, n=6, seed=0):
+
+def _new_seed() -> int:
+    """A fresh random seed from OS entropy, used whenever a _sample_*
+    call isn't given an explicit one."""
+    return random.SystemRandom().randrange(2**31)
+
+
+def _report_seed(seed) -> None:
+    """Print the seed a failing check's random sample used, so the
+    failure can be reproduced -- unconditional (not gated by verbose):
+    this is the one thing worth seeing even in an otherwise-quiet run."""
+    if seed is not None:
+        print(f"  (random sample seed: {seed})")
+
+
+def _sample_pairs(alg, n=None, seed=None):
+    if n is None:
+        n = SAMPLE_SIZE
+    if seed is None:
+        seed = _new_seed()
     rng = random.Random(seed)
     basis = list(alg.basis())
-    return [(rng.choice(basis), rng.choice(basis)) for _ in range(n)]
+    return [(rng.choice(basis), rng.choice(basis)) for _ in range(n)], seed
 
 
-def _sample_triples(alg, n=6, seed=0):
+def _sample_triples(alg, n=None, seed=None):
+    if n is None:
+        n = SAMPLE_SIZE
+    if seed is None:
+        seed = _new_seed()
     rng = random.Random(seed)
     basis = list(alg.basis())
-    return [(rng.choice(basis), rng.choice(basis), rng.choice(basis)) for _ in range(n)]
+    return [(rng.choice(basis), rng.choice(basis), rng.choice(basis)) for _ in range(n)], seed
 
 
-def _sample_single(alg, n=10, seed=0):
+def _sample_single(alg, n=None, seed=None):
+    if n is None:
+        n = SAMPLE_SIZE
+    if seed is None:
+        seed = _new_seed()
     rng = random.Random(seed)
     basis = list(alg.basis())
-    return [rng.choice(basis) for _ in range(min(n, len(basis)))]
+    return [rng.choice(basis) for _ in range(min(n, len(basis)))], seed
 
 
 def _pair(key):
@@ -84,7 +130,9 @@ def _mul_chain(alg, elements):
 
 def check_associativity(alg, samples=None, verbose=True) -> bool:
     """(a*b)*c == a*(b*c) for sample triples of basis elements."""
-    samples = samples if samples is not None else _sample_triples(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_triples(alg)
     for a, b, c in samples:
         ea, eb, ec = Element.basis(a), Element.basis(b), Element.basis(c)
         lhs = alg.mul(alg.mul(ea, eb), ec)
@@ -94,13 +142,16 @@ def check_associativity(alg, samples=None, verbose=True) -> bool:
                 print(f"associativity failed for a={a}, b={b}, c={c}")
                 print(f"  (ab)c = {lhs}")
                 print(f"  a(bc) = {rhs}")
+            _report_seed(seed)
             return False
     return True
 
 
 def check_bialgebra_homomorphism(alg, samples=None, verbose=True) -> bool:
     """Delta(a*b) == Delta(a) * Delta(b) (product taken in H (x) H)."""
-    samples = samples if samples is not None else _sample_pairs(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_pairs(alg)
     for a, b in samples:
         ea, eb = Element.basis(a), Element.basis(b)
         lhs = alg.comul(alg.mul(ea, eb))
@@ -110,13 +161,16 @@ def check_bialgebra_homomorphism(alg, samples=None, verbose=True) -> bool:
                 print(f"Delta homomorphism property failed for a={a}, b={b}")
                 print(f"  Delta(ab)         = {lhs}")
                 print(f"  Delta(a) Delta(b) = {rhs}")
+            _report_seed(seed)
             return False
     return True
 
 
 def check_counit(alg, samples=None, verbose=True) -> bool:
     """(id (x) eps)(Delta a) == a  and  (eps (x) id)(Delta a) == a."""
-    samples = samples if samples is not None else _sample_single(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
     for a in samples:
         ea = Element.basis(a)
         da = alg.comul(ea)
@@ -132,6 +186,7 @@ def check_counit(alg, samples=None, verbose=True) -> bool:
                 print(f"  (id x eps) Delta(a) = {left}")
                 print(f"  (eps x id) Delta(a) = {right}")
                 print(f"  a                   = {ea}")
+            _report_seed(seed)
             return False
     return True
 
@@ -142,7 +197,9 @@ def check_twisted_coassociativity(alg, samples=None, verbose=True) -> bool:
     For an honest Hopf algebra (Phi = 1^{(x)3}) this is ordinary
     coassociativity.
     """
-    samples = samples if samples is not None else _sample_single(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
     Phi = alg.associator()
     for a in samples:
         da = alg.comul(Element.basis(a))
@@ -153,6 +210,7 @@ def check_twisted_coassociativity(alg, samples=None, verbose=True) -> bool:
                 print(f"twisted coassociativity failed for a={a}")
                 print(f"  (Delta x id)(Delta a) . Phi = {lhs}")
                 print(f"  Phi . (id x Delta)(Delta a) = {rhs}")
+            _report_seed(seed)
             return False
     return True
 
@@ -194,8 +252,16 @@ def check_r_matrix_intertwiner(alg, samples=None, verbose=True) -> bool:
     plus its normalisation (id (x) eps)(R) == 1 == (eps (x) id)(R).
     Requires ``alg.r_matrix()`` (optional in the QuasiHopfAlgebra
     interface -- only algebras that are quasi-triangular implement it).
+
+    Defaults to a third of ``SAMPLE_SIZE``: R typically has hundreds of
+    terms, and each sample multiplies it out in full exact arithmetic
+    twice (``R.Delta(a)`` and ``flip(Delta(a)).R``), so this is the one
+    check expensive enough to need a smaller default -- pass
+    ``samples=`` explicitly to override.
     """
-    samples = samples if samples is not None else _sample_single(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg, n=max(1, SAMPLE_SIZE // 3))
     R = alg.r_matrix()
     one = alg.unit()
 
@@ -220,6 +286,7 @@ def check_r_matrix_intertwiner(alg, samples=None, verbose=True) -> bool:
                 print(f"R-matrix intertwiner failed for a={a}")
                 print(f"  R . Delta(a)       = {lhs}")
                 print(f"  flip(Delta(a)) . R = {rhs}")
+            _report_seed(seed)
             return False
     return True
 
@@ -296,7 +363,9 @@ def check_antipode(alg, samples=None, verbose=True) -> bool:
     For an honest Hopf algebra (alpha = beta = 1) this is the usual
     antipode axiom.
     """
-    samples = samples if samples is not None else _sample_single(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
     alpha, beta = alg.alpha(), alg.beta()
     for a in samples:
         ea = Element.basis(a)
@@ -319,6 +388,7 @@ def check_antipode(alg, samples=None, verbose=True) -> bool:
                 print(f"antipode axiom failed for a={a}")
                 print(f"  sum S(a_1) alpha a_2 = {eq1},  eps(a) alpha = {target1}")
                 print(f"  sum a_1 beta S(a_2)  = {eq2},  eps(a) beta  = {target2}")
+            _report_seed(seed)
             return False
     return True
 
@@ -427,7 +497,9 @@ def check_s_delta_compatibility(alg, samples=None, verbose=True) -> bool:
     """
     from .element import flip, tensor
 
-    samples = samples if samples is not None else _sample_single(alg)
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
     F = alg.f_element()
 
     for a in samples:
@@ -448,6 +520,7 @@ def check_s_delta_compatibility(alg, samples=None, verbose=True) -> bool:
                 print(f"S-Delta compatibility failed for a={a}")
                 print(f"  (S x S)(flip(Delta(a))) . F = {lhs}")
                 print(f"  F . Delta(S(a))             = {rhs}")
+            _report_seed(seed)
             return False
     return True
 

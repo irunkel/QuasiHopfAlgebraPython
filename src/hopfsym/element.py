@@ -59,13 +59,49 @@ def _key_from_factors(factors: tuple):
     return factors[0] if len(factors) == 1 else TensorKey(factors)
 
 
-class Element:
-    """A formal linear combination ``{basis_key: coefficient}``."""
+def _combine_alg(a, b):
+    """Resolve the ``.alg`` tag of a result from two operands' tags.
+    ``None`` acts as a wildcard (an untagged Element, e.g. anything
+    built via ``tensor()``/``tensor_mul()``/``apply_to_factor()``, or a
+    plain ``Element.basis(key)`` call, combines fine with a tagged one --
+    the same "None is compatible with anything" convention
+    ``qring.CycloNum`` uses for its field degree). Two *different*
+    concrete tags is almost certainly a bug (mixing Elements from two
+    different algebra instances), so that raises rather than silently
+    picking one."""
+    if a is None:
+        return b
+    if b is None or b is a:
+        return a
+    raise ValueError(
+        "combining Elements tagged with two different algebra instances -- "
+        "this usually means basis elements from two different algebra() "
+        "objects got mixed together"
+    )
 
-    __slots__ = ("terms",)
+
+class Element:
+    """A formal linear combination ``{basis_key: coefficient}``.
+
+    ``alg``, if set, tags an Element as belonging to a specific
+    :class:`~hopfsym.algebra.QuasiHopfAlgebra` instance -- purely so that
+    ``*`` (and ``**``, repeated ``*``) between two such Elements can mean
+    that algebra's product (``alg.mul``) instead of raising (see
+    ``__mul__``/``__pow__``). It is optional and propagated automatically
+    through ``+``/``-``/scalar ``*``; nothing else in this module ever
+    reads or requires it, so untagged use (``alg=None`` everywhere, the
+    default) behaves exactly as before this was added. Get a tagged
+    Element via ``QuasiHopfAlgebra.elt()`` (or a per-example generator
+    accessor built on it, e.g. ``RestrictedSl2.E``) or
+    ``Element.basis(key, alg=...)``, or implicitly from ``alg.mul(...)``'s
+    result.
+    """
+
+    __slots__ = ("terms", "alg")
 
     def __init__(self, terms: Dict = None):
         self.terms: Dict = {}
+        self.alg = None
         if terms:
             for k, v in terms.items():
                 self.add_term(k, v)
@@ -75,8 +111,10 @@ class Element:
         return cls()
 
     @classmethod
-    def basis(cls, key, coeff=1) -> "Element":
-        return cls({key: coeff})
+    def basis(cls, key, coeff=1, alg=None) -> "Element":
+        e = cls({key: coeff})
+        e.alg = alg
+        return e
 
     def add_term(self, key, coeff) -> None:
         if _is_zero(coeff):
@@ -96,10 +134,13 @@ class Element:
         result = Element(dict(self.terms))
         for k, v in other.terms.items():
             result.add_term(k, v)
+        result.alg = _combine_alg(self.alg, other.alg)
         return result
 
     def __neg__(self) -> "Element":
-        return Element({k: -v for k, v in self.terms.items()})
+        result = Element({k: -v for k, v in self.terms.items()})
+        result.alg = self.alg
+        return result
 
     def __sub__(self, other: "Element") -> "Element":
         if not isinstance(other, Element):
@@ -107,15 +148,49 @@ class Element:
         return self + (-other)
 
     def __rmul__(self, scalar) -> "Element":
-        return Element({k: scalar * v for k, v in self.terms.items()})
+        result = Element({k: scalar * v for k, v in self.terms.items()})
+        result.alg = self.alg
+        return result
 
-    def __mul__(self, scalar) -> "Element":
-        if isinstance(scalar, Element):
+    def __mul__(self, other) -> "Element":
+        if isinstance(other, Element):
+            resolved = _combine_alg(self.alg, other.alg)
+            if resolved is not None:
+                return resolved.mul(self, other)
             raise TypeError(
                 "Element * Element is ambiguous (algebra product or tensor?); "
-                "use alg.mul(a, b) or tensor(a, b) explicitly"
+                "use alg.mul(a, b) or tensor(a, b) explicitly -- or tag at "
+                "least one operand with its algebra (e.g. via "
+                "QuasiHopfAlgebra.elt(key)) to make `*` mean the algebra product"
             )
-        return self.__rmul__(scalar)
+        return self.__rmul__(other)
+
+    def __pow__(self, n: int) -> "Element":
+        """Repeated algebra product, self * self * ... * self (n times);
+        requires a tagged Element for the same reason ``*`` does (see
+        __mul__) -- there is no algebra to multiply in otherwise. n=0
+        gives the algebra's unit. Square-and-multiply, same pattern as
+        qring.CycloNum.__pow__."""
+        if not isinstance(n, int):
+            return NotImplemented
+        if n < 0:
+            raise ValueError("Element ** n needs n >= 0 (no general inverses)")
+        if self.alg is None:
+            raise TypeError(
+                "Element ** n requires a tagged Element (e.g. via alg.elt(key) "
+                "or alg.E/alg.F/alg.K) so `**` knows which algebra's product to use"
+            )
+        alg = self.alg
+        result = alg.unit()
+        result.alg = alg
+        base = self
+        while n > 0:
+            if n & 1:
+                result = result * base
+            n >>= 1
+            if n:
+                base = base * base
+        return result
 
     def is_zero(self) -> bool:
         return len(self.terms) == 0

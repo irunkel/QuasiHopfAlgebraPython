@@ -106,6 +106,12 @@ from ..unicode_fmt import TENSOR, superscript
 # 0 <= a, b, c < p.
 BasisKey = tuple
 
+# Token letters used by multiply_basis/_reduce_word, in the same order as
+# a BasisKey's positions (index 0 = "E", 1 = "F", 2 = "K") -- the one
+# place that correspondence is written down explicitly, rather than left
+# implicit-by-convention at every call site.
+_LETTERS = ("E", "F", "K")
+
 
 class RestrictedSl2(QuasiHopfAlgebra):
     """U_res sl(2) at a primitive 2p'th root of unity, with K^p = 1."""
@@ -156,15 +162,31 @@ class RestrictedSl2(QuasiHopfAlgebra):
     def unit(self) -> Element:
         return Element.basis((0, 0, 0))
 
+    @property
+    def E(self) -> Element:
+        """The generator E, as a tagged Element (see Element.__mul__) --
+        e.g. ``alg.E * alg.F`` is ``alg.mul(alg.E, alg.F)``."""
+        return self.elt((1, 0, 0))
+
+    @property
+    def F(self) -> Element:
+        """The generator F, tagged -- see ``E``."""
+        return self.elt((0, 1, 0))
+
+    @property
+    def K(self) -> Element:
+        """The generator K, tagged -- see ``E``."""
+        return self.elt((0, 0, 1))
+
     # -- product ----------------------------------------------------------
     def multiply_basis(self, b1: BasisKey, b2: BasisKey) -> Element:
         key = (b1, b2)
         cached = self._mul_basis_cache.get(key)
         if cached is not None:
             return cached
-        a1, f1, k1 = b1
-        a2, f2, k2 = b2
-        tokens = [("E", a1), ("F", f1), ("K", k1), ("E", a2), ("F", f2), ("K", k2)]
+        tokens = [(letter, exp) for letter, exp in zip(_LETTERS, b1)] + [
+            (letter, exp) for letter, exp in zip(_LETTERS, b2)
+        ]
         result = self._reduce_word(tokens)
         self._mul_basis_cache[key] = result
         return result
@@ -178,6 +200,7 @@ class RestrictedSl2(QuasiHopfAlgebra):
         p = self.p
         tokens = [t for t in tokens if t[1] != 0]
 
+        # E^p = 0 = F^p.
         for letter, exp in tokens:
             if letter in ("E", "F") and exp >= p:
                 return Element.zero()
@@ -185,29 +208,38 @@ class RestrictedSl2(QuasiHopfAlgebra):
         for i in range(len(tokens) - 1):
             (l1, e1), (l2, e2) = tokens[i], tokens[i + 1]
 
+            # X^m X^n = X^(m+n), same generator adjacent.
             if l1 == l2:
                 new_tokens = tokens[:i] + [(l1, e1 + e2)] + tokens[i + 2:]
                 return self._reduce_word(new_tokens)
 
             if l1 == "K" and l2 == "E":
+                # K^m E^n = q^{2mn} E^n K^m  (from K E K^-1 = q^2 E)
                 coeff = self.q(2 * e1 * e2)
                 new_tokens = tokens[:i] + [("E", e2), ("K", e1)] + tokens[i + 2:]
                 return coeff * self._reduce_word(new_tokens)
 
             if l1 == "K" and l2 == "F":
+                # K^m F^n = q^{-2mn} F^n K^m  (from K F K^-1 = q^-2 F)
                 coeff = self.q(-2 * e1 * e2)
                 new_tokens = tokens[:i] + [("F", e2), ("K", e1)] + tokens[i + 2:]
                 return coeff * self._reduce_word(new_tokens)
 
             if l1 == "F" and l2 == "E":
+                # F^m E^n = E^n F^m - [E^n, F^m]
+                # (from [E, F] = (K - K^-1)/(q - q^-1))
                 swapped = tokens[:i] + [("E", e2), ("F", e1)] + tokens[i + 2:]
                 commutator = self._comm_ef(e2, e1)
                 correction = self._sandwich(tokens[:i], commutator, tokens[i + 2:])
                 return self._reduce_word(swapped) - correction
 
-        a = sum(exp for letter, exp in tokens if letter == "E")
-        b = sum(exp for letter, exp in tokens if letter == "F")
-        c = sum(exp for letter, exp in tokens if letter == "K") % p
+        # No more inversions or merges left: word is E^a F^b K^c already
+        # (K^p = 1, so c wraps mod p; E^p = F^p = 0 already ruled out above).
+        exps = {letter: 0 for letter in _LETTERS}
+        for letter, exp in tokens:
+            exps[letter] += exp
+        a, b, c = (exps[letter] for letter in _LETTERS)
+        c %= p
         if a >= p or b >= p:
             return Element.zero()
         return Element.basis((a, b, c))
