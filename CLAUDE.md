@@ -15,7 +15,7 @@ operator algebras / logarithmic CFT / quantum groups). It's explicitly
 *not* meant to become a general computer-algebra system -- keep additions
 light and readable over clever/general.
 
-The first (and so far only) worked example, `U_q^{(Phi)}sl(2)`
+The first worked example, `U_q^{(Phi)}sl(2)`
 (`src/hopfsym/examples/quantum_sl2_quasi.py`), is a direct port of
 `reference/hopf-Uqsl2-quasi.txt`, Ingo's own Mathematica code
 implementing the algebra from Creutzig-Gainutdinov-Runkel,
@@ -23,6 +23,37 @@ arXiv:1712.07260 (Ingo is a co-author). When extending or debugging
 that example, that Mathematica file is the ground truth to check
 against, line by line if needed -- it's authoritative, not just a
 rough reference.
+
+A second example, `U_res sl(2)` with `K^p = 1`
+(`src/hopfsym/examples/restricted_sl2.py`), is the honest Hopf algebra
+of the paper's Section 4.1, but with `K` of order `p` rather than the
+paper's `2p` (Ingo's request, confirmed against the reasoning in that
+file's module docstring: `K^p` is already central of order <= 2 in
+`QuantumSl2Quasi`, so this is a well-defined Hopf-ideal quotient, same
+`q`, same field). Unlike the first example, there is *no* Mathematica
+reference for this one -- it was derived directly from the paper and
+cross-checked against `QuantumSl2Quasi` computationally (see
+`tests/test_restricted_sl2.py`'s `QuotientConsistencyTests`, which
+checks the quotient-homomorphism property exhaustively). If you extend
+this example, that test (and the paper's Section 4.1) is what to check
+against, not a Mathematica file.
+
+Surprising fact worth knowing before touching either example again: the
+paper explicitly says `\UresSL2` (`K^{2p} = 1`) has *no* R-matrix (end of
+Sec. 4.1) -- but `RestrictedSl2` (`K^p = 1`) *does* have one, and from it
+a monodromy/Drinfeld/ribbon element, all satisfying the same axioms as
+`QuantumSl2Quasi`'s. This isn't a contradiction (the no-go is about the
+bigger algebra `RestrictedSl2` is a quotient of, not about it), but it's
+the kind of thing worth re-verifying rather than assuming if either
+example's definition changes -- it was established computationally
+(`tests/test_restricted_sl2.py`'s `BraidingTests`), not just asserted.
+`RestrictedSl2.r_matrix()`/`.drinfeld()` have clean from-scratch closed
+forms (see the module docstring's "Where these formulas come from");
+`.ribbon()` does not (the K^p=1 quotient of the Gauss-sum exponent is
+parity-in-p-dependent) and is instead computed by literally reusing
+`QuantumSl2Quasi.ribbon()`'s formula with the final K-exponent reduced
+mod p -- a legitimate, exact technique (not a numerical shortcut), just
+worth knowing so it isn't mistaken for an oversight.
 
 ## Design philosophy (please preserve these choices)
 
@@ -84,6 +115,56 @@ given (plain `int`/`Fraction` mix in fine too, via each ring's own
 `__radd__`/`__rmul__`). A new ring type just needs to support that same
 small surface.
 
+### A single algebra can need more than one cyclotomic field
+
+This came up porting the R-matrix and cost real time to track down, so:
+**a structure map can force a bigger field than the rest of the
+algebra, even when the algebra itself only has one `p`.** In
+`quantum_sl2_quasi.py`, `Delta`/`S`/`Phi` only ever need integer powers
+of `q` and live in `Q(zeta_{2p})`, but the R-matrix formula contains
+`q^(t^2/2)` -- and since the gauge parameter `t` is always odd, `t^2/2`
+is a genuine half-integer exponent, not an artifact of how the formula
+happens to be written. So the R-matrix (and everything built from it:
+`monodromy`, `drinfeld`, hexagon, and -- via a different mechanism,
+see below -- `ribbon`) lives one field up, in `Q(zeta_{4p})`. Before
+assuming a new piece of structure lives in the same field as the rest
+of an algebra, check every exponent of `q` it involves for a stray
+`/2` (or similar) the way this was caught here -- don't assume the
+existing field is big enough just because it was for everything ported
+so far.
+
+Two pieces make mixing coefficients from different (but nested)
+cyclotomic fields transparent, so call sites never need to embed by
+hand:
+
+- `CycloNum.embed(new_n)`: the field embedding `Q(zeta_n) -> Q(zeta_{k*n})`
+  via `zeta_n |-> zeta_{k*n}**k`, memoised per instance (this mattered:
+  the same small-field coefficients -- e.g. `multiply_basis`'s cached
+  results -- get embedded repeatedly once a big element like an
+  R-matrix combines with them across hundreds of terms, so caching the
+  embedding, not just the multiplication, was the fix that made
+  `check_r_matrix_intertwiner` fast).
+- `CycloNum` arithmetic (`__add__`/`__mul__`/`__truediv__`) auto-widens:
+  combining `Q(zeta_{2p})` and `Q(zeta_{4p})` values just works (the
+  smaller side is embedded automatically), and only genuinely
+  incompatible degrees (neither divides the other) still raise. This is
+  why `r_matrix()`, `Phi`, `comul(...)`, etc. can be freely multiplied
+  together in `axioms.py` without any algebra-specific glue code.
+
+The ribbon element needs an extra trick beyond this: its prefactor
+`(1-i)/(2*sqrt(p))` isn't obviously an element of *any* cyclotomic field
+as written (`i` and `sqrt(p)` look like they need the complex numbers).
+The paper's derivation (`eq:gauss-sum`) rewrites it via the classical
+quadratic Gauss sum `sum_{a=0}^{2p-1} q^(-a^2/2) == (1-i)*sqrt(p)`,
+which *is* manifestly a finite sum of integer powers of `q^(1/2)` --
+i.e. an honest, exactly-computable `CycloNum(4p)` element, no black-box
+`sqrt`/complex arithmetic needed anywhere (see `ribbon()`'s docstring
+for the one-line algebraic simplification that turns this into the
+actual prefactor used). If a future algebra's structure constants
+involve a similar-looking `sqrt`/`i` combination, look for the
+corresponding Gauss-sum identity before reaching for a numerical
+approximation -- it is very likely exactly representable the same way.
+
 ## Architecture
 
 ```
@@ -96,20 +177,27 @@ Element (element.py)
 QuasiHopfAlgebra (algebra.py)
     the interface: basis(), unit(), multiply_basis() [+ mul(), given
     for free], comul(), counit(), antipode(), associator(),
-    associator_inv(), alpha(), beta().
+    associator_inv(), alpha(), beta() -- required; r_matrix(), ribbon(),
+    drinfeld(), f_element() -- optional (quasi-triangular/ribbon
+    structure only, default to NotImplementedError).
 
 axioms.py
     generic checkers written only against that interface:
     check_associativity, check_bialgebra_homomorphism, check_counit,
     check_twisted_coassociativity, check_pentagon, check_antipode,
-    and check_all() to run everything.
+    check_evaluation_coevaluation, and check_all() to run the required
+    ones together; check_r_matrix_intertwiner, check_hexagon,
+    check_ribbon, check_s_delta_compatibility for the optional
+    quasi-triangular/ribbon structure (not part of check_all, since not
+    every algebra has it -- call these separately, see README).
 
 examples/quantum_sl2_quasi.py
     the one concrete algebra so far. multiply_basis is implemented via
     _reduce_word, a small term-rewriting routine operating on a list of
     (letter, exponent) tokens -- this is *the* place the algebra's
-    relations live; every other structure map (comul, antipode, ...)
-    only ever calls self.mul(), which bottoms out in _reduce_word.
+    relations live; every other structure map (comul, antipode,
+    r_matrix, ribbon, drinfeld, f_element, ...) only ever calls
+    self.mul(), which bottoms out in _reduce_word.
 ```
 
 ## Adding a new algebra
@@ -131,6 +219,18 @@ examples/quantum_sl2_quasi.py
    file, or a docstring citation) -- when something fails, being able
    to diff against ground truth line-by-line is what actually finds the
    bug, as opposed to re-deriving from scratch under time pressure.
+6. If there's no ground-truth source to diff against line-by-line (as
+   with `restricted_sl2.py`, which has no Mathematica reference), look
+   for an *independent* cross-check instead of trusting internal
+   self-consistency alone -- the axiom checks catch a lot, but they'd
+   also happily pass on a self-consistent algebra that isn't the one you
+   meant to define. `restricted_sl2.py` is verified as the exact
+   quotient of `quantum_sl2_quasi.py` by `K^p = 1` (checked exhaustively
+   over every basis pair, not sampled); `quantum_sl2_quasi.py`'s
+   R-matrix/monodromy are similarly checked against independently
+   re-derived closed forms (`testExpression` in the Mathematica source).
+   A relationship like this between two examples is usually available
+   whenever one is a variant/limit/quotient of another -- look for it.
 
 ## Performance notes
 
@@ -163,27 +263,70 @@ What's already in place:
 - `Poly.__init__` (in `qring.py`) skips redundant `Fraction()`
   conversion when a coefficient is already a `Fraction` -- this showed
   up as the single hottest line in profiling before the fix.
+- **Never accumulate into an `Element` via `result = result + piece`
+  inside a loop.** `Element.__add__` copies the *entire* left-hand side
+  (via `Element.__init__` re-inserting every existing term) on every
+  call -- fine once, quadratic across a loop. This was `tensor_mul`'s
+  bug (element.py): summing a ~1000-term result one small `piece` at a
+  time this way made `check_r_matrix_intertwiner` take ~40s at `p=4`
+  purely from re-copying its own growing result millions of times over
+  -- nothing to do with the size of the actual computation. The fix was
+  to accumulate directly via `result.add_term(k, c)` in the innermost
+  loop instead (~26s just from that, before the embed-caching below).
+  `algebra.py`'s `mul()`, `tensor()`, and `apply_to_factor()` already
+  did it the right way; `tensor_mul` was the one holdout. If you add a
+  new function that builds up an `Element` across many small pieces,
+  use `add_term` directly, not repeated `+`.
+- **Memoise field embeddings, not just field arithmetic.** Once one
+  structure map lives in a bigger cyclotomic field than another (see
+  "A single algebra can need more than one cyclotomic field" above),
+  every mixed-field operation calls `CycloNum.embed()` -- and the same
+  small-field coefficient objects (e.g. `multiply_basis`'s cache)
+  recur across every pairing with a big element's hundreds of terms.
+  `CycloNum.embed()` is memoised per instance for exactly this reason;
+  dropping the cache measurably regressed `check_r_matrix_intertwiner`
+  even after the `tensor_mul` fix above.
 
 If you're chasing more speed later, `cProfile` +
 `pstats.Stats(...).sort_stats("tottime")` on a single `axioms.check_*`
-call is the fastest way to find where time is actually going -- don't
-guess, the bottleneck moved twice already during this project's first
-session (from `_comul_basis`'s repeated squaring, to per-element
-exhaustive sampling, to `Fraction()` construction).
+call is the fastest way to find where time is actually going -- and
+`pstats.Stats(...).print_callers(...)` to find *who* is calling the hot
+function when the raw call count doesn't match what the algorithm
+should need (this is what caught the `tensor_mul` bug above: the
+hot function was `Element.add_term`, but the real story was in its
+caller, `Element.__init__`). Don't guess -- the bottleneck has moved
+several times over this project's history (from `_comul_basis`'s
+repeated squaring, to per-element exhaustive sampling, to `Fraction()`
+construction, to `tensor_mul`'s accumulation pattern).
 
 ## Not yet ported (from the Mathematica reference)
 
-- The universal R-matrix and hexagon axioms (quasi-triangularity).
-- The ribbon element and its defining properties.
-- The Drinfeld element, and the "F" element relating `Delta` and `S`
-  (`testSDeltaR` in the Mathematica source).
-- The explicit closed-form cross-checks (`testExpression` in the
-  Mathematica source).
+Everything `testall` actually exercises is now ported: associativity,
+`Delta` as an algebra homomorphism, the counit and antipode axioms,
+twisted coassociativity, the pentagon identity, the
+evaluation/coevaluation identities (`testEvalCoeval`), the R-matrix and
+its intertwiner property (`testRinter`), the hexagon axioms
+(`testHexagon`), the monodromy element, the Drinfeld element, the ribbon
+element and its defining properties (`testRibbon`), the "F" element and
+S-Delta compatibility (`testSDeltaR`), and the explicit closed-form
+cross-checks (`testExpression`) -- see
+`src/hopfsym/examples/quantum_sl2_quasi.py` (`r_matrix`, `monodromy`,
+`drinfeld`, `ribbon`, `f_element`) and
+`tests/test_quantum_sl2_quasi_braiding.py`.
 
-These all build on the core that's now in place; porting them should
-follow the same pattern (hand-derive/port the formula into a method on
-`QuantumSl2Quasi`, add a generic checker to `axioms.py` if the property
-is general enough to be reusable, add a regression test).
+Two pieces the *original Mathematica source itself* never finished are
+correspondingly still absent here: the Hopf pairing (`hopfpair`) and the
+monodromy-matrix non-degeneracy check (`testMonodromy`) are both left
+commented out with a `TODO` in `reference/hopf-Uqsl2-quasi.txt` -- there
+is no working reference to port them against yet.
+
+If a new algebra needs the R-matrix/ribbon/Drinfeld machinery, the
+pattern that worked here: implement `r_matrix()`/`ribbon()`/
+`drinfeld()`/`f_element()` as methods on the algebra (they're optional in
+`QuasiHopfAlgebra`, defaulting to `NotImplementedError`), and reuse the
+generic checkers in `axioms.py`
+(`check_r_matrix_intertwiner`/`check_hexagon`/`check_ribbon`/
+`check_s_delta_compatibility`) rather than writing new ones.
 
 ## Planned generalization: quasi-Hopf group-coalgebras
 

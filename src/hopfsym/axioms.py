@@ -6,13 +6,21 @@ instance and some basis elements to test against, and returns True/False
 written purely against the QuasiHopfAlgebra interface, so they work
 unchanged for any algebra that implements it -- these mirror the
 ``test...`` routines in the original Mathematica code (testAssoc,
-testCoassoc, testPentagon, testHopf, testAntipode).
+testCoassoc, testPentagon, testHopf, testAntipode, testEvalCoeval,
+testRinter, testHexagon, testRibbon, testSDeltaR).
 
 For an honest Hopf algebra (Phi = 1 (x) 1 (x) 1, alpha = beta = 1),
 ``check_twisted_coassociativity`` reduces to ordinary coassociativity
 and ``check_antipode`` reduces to the usual antipode axiom -- so nothing
 here is specific to the quasi-Hopf case, it is simply general enough to
 cover it.
+
+``check_r_matrix_intertwiner``, ``check_hexagon``, ``check_ribbon`` and
+``check_s_delta_compatibility`` need the *optional* part of the
+interface (``r_matrix``/``ribbon``/``drinfeld``/``f_element`` -- see
+``algebra.py``), for algebras that are additionally quasi-triangular or
+ribbon. They are not part of ``check_all`` since most algebras won't
+implement that optional structure; call them separately when they do.
 
 By default, checks that take a single basis element (counit, twisted
 coassociativity, antipode) test a random sample rather than the whole
@@ -28,7 +36,7 @@ from __future__ import annotations
 
 import random
 
-from .element import Element, TensorKey, apply_to_factor, tensor_mul
+from .element import Element, TensorKey, apply_to_factor, flip, tensor_mul
 
 
 def _sample_pairs(alg, n=6, seed=0):
@@ -56,6 +64,22 @@ def _pair(key):
     if len(factors) != 2:
         raise ValueError(f"expected a 2-fold tensor key, got {key!r}")
     return factors
+
+
+def _triple(key):
+    """Split a 3-fold TensorKey into its three factors."""
+    factors = key if isinstance(key, TensorKey) else (key,)
+    if len(factors) != 3:
+        raise ValueError(f"expected a 3-fold tensor key, got {key!r}")
+    return factors
+
+
+def _mul_chain(alg, elements):
+    """alg.mul applied left-to-right across a list of Elements (>= 1)."""
+    result = elements[0]
+    for e in elements[1:]:
+        result = alg.mul(result, e)
+    return result
 
 
 def check_associativity(alg, samples=None, verbose=True) -> bool:
@@ -161,6 +185,108 @@ def check_pentagon(alg, verbose=True) -> bool:
     return True
 
 
+def check_r_matrix_intertwiner(alg, samples=None, verbose=True) -> bool:
+    """The defining property of a universal R-matrix R (an element of
+    H (x) H, from ``alg.r_matrix()``):
+
+        R . Delta(a) == flip(Delta(a)) . R   for every a in H,
+
+    plus its normalisation (id (x) eps)(R) == 1 == (eps (x) id)(R).
+    Requires ``alg.r_matrix()`` (optional in the QuasiHopfAlgebra
+    interface -- only algebras that are quasi-triangular implement it).
+    """
+    samples = samples if samples is not None else _sample_single(alg)
+    R = alg.r_matrix()
+    one = alg.unit()
+
+    left = Element()
+    right = Element()
+    for key, c in R.terms.items():
+        k1, k2 = _pair(key)
+        left = left + (c * alg.counit(Element.basis(k2))) * Element.basis(k1)
+        right = right + (c * alg.counit(Element.basis(k1))) * Element.basis(k2)
+    if left != one or right != one:
+        if verbose:
+            print("R-matrix intertwiner failed: normalisation")
+            print(f"  (id x eps)(R) = {left},  (eps x id)(R) = {right},  1 = {one}")
+        return False
+
+    for a in samples:
+        da = alg.comul(Element.basis(a))
+        lhs = tensor_mul(alg, R, da)
+        rhs = tensor_mul(alg, flip(da), R)
+        if lhs != rhs:
+            if verbose:
+                print(f"R-matrix intertwiner failed for a={a}")
+                print(f"  R . Delta(a)       = {lhs}")
+                print(f"  flip(Delta(a)) . R = {rhs}")
+            return False
+    return True
+
+
+def check_hexagon(alg, verbose=True) -> bool:
+    r"""The two hexagon axioms tying the associator Phi to the R-matrix R
+    together (quasi-triangularity compatible with non-trivial
+    associativity):
+
+        Phi_{2,3,1} . (Delta (x) id)(R) . Phi
+            == R_{13} . Phi_{1,3,2} . R_{23}
+
+        Phi^-1_{3,1,2} . (id (x) Delta)(R) . Phi^-1
+            == R_{13} . Phi^-1_{2,1,3} . R_{12}
+
+    where Phi_{ijk} denotes Phi with its legs permuted (via
+    ``permute_factors``) and R_{ij} denotes R padded with a unit leg to
+    make it a 3-fold tensor (via ``apply_to_factor`` + ``tensor``).
+    Requires ``alg.r_matrix()`` (optional in the interface).
+    """
+    from .element import permute_factors, tensor
+
+    Phi = alg.associator()
+    Phiinv = alg.associator_inv()
+    R = alg.r_matrix()
+    one = alg.unit()
+
+    def pad_left(v):
+        return tensor(one, v)
+
+    def pad_right(u):
+        return tensor(u, one)
+
+    phi231 = permute_factors(Phi, (1, 2, 0))
+    phi132 = permute_factors(Phi, (0, 2, 1))
+    r13 = apply_to_factor(R, 1, pad_left)
+    r23 = apply_to_factor(R, 0, pad_left)
+
+    delta_id_R = apply_to_factor(R, 0, alg.comul)
+    lhs1 = tensor_mul(alg, tensor_mul(alg, phi231, delta_id_R), Phi)
+    rhs1 = tensor_mul(alg, tensor_mul(alg, r13, phi132), r23)
+
+    if lhs1 != rhs1:
+        if verbose:
+            print("hexagon axiom (1) failed")
+            print(f"  lhs = {lhs1}")
+            print(f"  rhs = {rhs1}")
+        return False
+
+    phi312inv = permute_factors(Phiinv, (2, 0, 1))
+    phi213inv = permute_factors(Phiinv, (1, 0, 2))
+    r12 = apply_to_factor(R, 1, pad_right)
+
+    id_delta_R = apply_to_factor(R, 1, alg.comul)
+    lhs2 = tensor_mul(alg, tensor_mul(alg, phi312inv, id_delta_R), Phiinv)
+    rhs2 = tensor_mul(alg, tensor_mul(alg, r13, phi213inv), r12)
+
+    if lhs2 != rhs2:
+        if verbose:
+            print("hexagon axiom (2) failed")
+            print(f"  lhs = {lhs2}")
+            print(f"  rhs = {rhs2}")
+        return False
+
+    return True
+
+
 def check_antipode(alg, samples=None, verbose=True) -> bool:
     """For Delta(a) = sum a_1 (x) a_2:
 
@@ -197,6 +323,135 @@ def check_antipode(alg, samples=None, verbose=True) -> bool:
     return True
 
 
+def check_evaluation_coevaluation(alg, verbose=True) -> bool:
+    r"""The evaluation/coevaluation identities for the associator,
+    antipode and alpha/beta -- part of the rigidity data of a quasi-Hopf
+    algebra, alongside ``check_antipode`` (mirrors ``testEvalCoeval`` in
+    the original Mathematica code):
+
+        sum S(a) . alpha . b . beta . S(c) == 1   (Phi = sum a (x) b (x) c)
+        sum a . beta . S(b) . alpha . c    == 1   (Phi^-1 = sum a (x) b (x) c)
+
+    Uses only the required part of the QuasiHopfAlgebra interface.
+    """
+    Phi = alg.associator()
+    Phiinv = alg.associator_inv()
+    alpha, beta = alg.alpha(), alg.beta()
+    one = alg.unit()
+
+    t1 = Element()
+    for key, c in Phi.terms.items():
+        a, b, cc = _triple(key)
+        term = _mul_chain(
+            alg,
+            [alg.antipode(Element.basis(a)), alpha, Element.basis(b), beta, alg.antipode(Element.basis(cc))],
+        )
+        for k2, c2 in term.terms.items():
+            t1.add_term(k2, c * c2)
+    if t1 != one:
+        if verbose:
+            print(f"evaluation identity failed: sum S(a) alpha b beta S(c) = {t1}, expected {one}")
+        return False
+
+    t2 = Element()
+    for key, c in Phiinv.terms.items():
+        a, b, cc = _triple(key)
+        term = _mul_chain(
+            alg,
+            [Element.basis(a), beta, alg.antipode(Element.basis(b)), alpha, Element.basis(cc)],
+        )
+        for k2, c2 in term.terms.items():
+            t2.add_term(k2, c * c2)
+    if t2 != one:
+        if verbose:
+            print(f"coevaluation identity failed: sum a beta S(b) alpha c = {t2}, expected {one}")
+        return False
+
+    return True
+
+
+def check_ribbon(alg, verbose=True) -> bool:
+    r"""Properties defining a ribbon element v = ``alg.ribbon()``, given a
+    quasi-triangular structure R = ``alg.r_matrix()`` and Drinfeld
+    element u = ``alg.drinfeld()`` (all optional in the interface;
+    mirrors ``testRibbon`` in the original Mathematica code):
+
+        S(v) == v
+        eps(v) == 1
+        u . S(u) == v . v
+        M . Delta(v) == v (x) v      (M = R_21 . R, the monodromy)
+    """
+    from .element import flip, tensor
+
+    v = alg.ribbon()
+    one = alg.unit()
+
+    if alg.antipode(v) != v:
+        if verbose:
+            print(f"ribbon axiom failed: S(v) != v  (S(v) = {alg.antipode(v)}, v = {v})")
+        return False
+
+    if alg.counit(v) != 1:
+        if verbose:
+            print(f"ribbon axiom failed: eps(v) != 1  (eps(v) = {alg.counit(v)})")
+        return False
+
+    u = alg.drinfeld()
+    lhs = alg.mul(u, alg.antipode(u))
+    rhs = alg.mul(v, v)
+    if lhs != rhs:
+        if verbose:
+            print(f"ribbon axiom failed: u.S(u) != v.v  (u.S(u) = {lhs}, v.v = {rhs})")
+        return False
+
+    R = alg.r_matrix()
+    M = tensor_mul(alg, flip(R), R)
+    lhs = tensor_mul(alg, M, alg.comul(v))
+    rhs = tensor(v, v)
+    if lhs != rhs:
+        if verbose:
+            print(f"ribbon axiom failed: M.Delta(v) != v (x) v  (M.Delta(v) = {lhs}, v (x) v = {rhs})")
+        return False
+
+    return True
+
+
+def check_s_delta_compatibility(alg, samples=None, verbose=True) -> bool:
+    r"""Compatibility of the coproduct and antipode via the element
+    F = ``alg.f_element()`` (Drinfeld's paper; mirrors ``testSDeltaR`` in
+    the original Mathematica code):
+
+        (S (x) S)(flip(Delta(a))) . F == F . Delta(S(a))   for every a.
+
+    Requires ``alg.f_element()`` (optional in the interface).
+    """
+    from .element import flip, tensor
+
+    samples = samples if samples is not None else _sample_single(alg)
+    F = alg.f_element()
+
+    for a in samples:
+        da = alg.comul(Element.basis(a))
+
+        # (S (x) S) applied to flip(Delta(a)):
+        swapped_S = Element()
+        for key, c in flip(da).terms.items():
+            u, v = _pair(key)
+            piece = tensor(alg.antipode(Element.basis(u)), alg.antipode(Element.basis(v)))
+            for k2, c2 in piece.terms.items():
+                swapped_S.add_term(k2, c * c2)
+
+        lhs = tensor_mul(alg, swapped_S, F)
+        rhs = tensor_mul(alg, F, alg.comul(alg.antipode(Element.basis(a))))
+        if lhs != rhs:
+            if verbose:
+                print(f"S-Delta compatibility failed for a={a}")
+                print(f"  (S x S)(flip(Delta(a))) . F = {lhs}")
+                print(f"  F . Delta(S(a))             = {rhs}")
+            return False
+    return True
+
+
 def check_all(alg, verbose=True) -> bool:
     """Run every check above; returns True iff all of them pass."""
     checks = [
@@ -206,6 +461,7 @@ def check_all(alg, verbose=True) -> bool:
         ("twisted coassociativity", lambda: check_twisted_coassociativity(alg, verbose=verbose)),
         ("pentagon", lambda: check_pentagon(alg, verbose=verbose)),
         ("antipode", lambda: check_antipode(alg, verbose=verbose)),
+        ("evaluation/coevaluation", lambda: check_evaluation_coevaluation(alg, verbose=verbose)),
     ]
     ok = True
     for name, fn in checks:

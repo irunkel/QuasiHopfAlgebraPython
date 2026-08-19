@@ -198,9 +198,10 @@ class CycloNum:
     know n up front).
     """
 
-    __slots__ = ("n", "poly")
+    __slots__ = ("n", "poly", "_embed_cache")
 
     def __init__(self, n, poly: Poly):
+        self._embed_cache = None
         self.n = n
         self.poly = poly if n is None else _reduce_mod_phi(n, poly)
 
@@ -229,18 +230,36 @@ class CycloNum:
             return CycloNum.constant(x)
         return NotImplemented
 
-    def _combine_n(self, other: "CycloNum"):
+    def _aligned(self, other: "CycloNum"):
+        """Resolve a common field degree n for ``self`` and ``other`` and
+        return (self.poly, other.poly, n) with both polys already
+        reinterpreted in that field. If the two n's differ and neither is
+        None, one must divide the other -- e.g. Q(zeta_{2p}) and
+        Q(zeta_{4p}) -- and the smaller side is auto-embedded (see
+        ``embed()``) into the larger, so arithmetic between two structure
+        maps that happen to live in different (but compatible) cyclotomic
+        fields just works without every call site having to embed by hand.
+        Genuinely incompatible degrees (neither divides the other) still
+        raise, same as before this auto-widening existed.
+        """
+        if self.n is None and other.n is None:
+            return self.poly, other.poly, None
         if self.n is None:
-            return other.n
+            return self.poly, other.poly, other.n
         if other.n is None or other.n == self.n:
-            return self.n
+            return self.poly, other.poly, self.n
+        if other.n % self.n == 0:
+            return self.embed(other.n).poly, other.poly, other.n
+        if self.n % other.n == 0:
+            return self.poly, other.embed(self.n).poly, self.n
         raise ValueError(f"mismatched cyclotomic field degree: {self.n} vs {other.n}")
 
     def __add__(self, other):
         other = CycloNum._as_cn(other)
         if other is NotImplemented:
             return NotImplemented
-        return CycloNum(self._combine_n(other), self.poly + other.poly)
+        p1, p2, n = self._aligned(other)
+        return CycloNum(n, p1 + p2)
 
     __radd__ = __add__
 
@@ -260,7 +279,8 @@ class CycloNum:
         other = CycloNum._as_cn(other)
         if other is NotImplemented:
             return NotImplemented
-        return CycloNum(self._combine_n(other), self.poly * other.poly)
+        p1, p2, n = self._aligned(other)
+        return CycloNum(n, p1 * p2)
 
     __rmul__ = __mul__
 
@@ -281,8 +301,8 @@ class CycloNum:
         other = CycloNum._as_cn(other)
         if other is NotImplemented:
             return NotImplemented
-        n = self._combine_n(other)
-        return CycloNum(n, self.poly) * CycloNum(n, other.poly).inverse()
+        p1, p2, n = self._aligned(other)
+        return CycloNum(n, p1) * CycloNum(n, p2).inverse()
 
     def __rtruediv__(self, other):
         other = CycloNum._as_cn(other)
@@ -302,6 +322,50 @@ class CycloNum:
             k >>= 1
         return result
 
+    def embed(self, new_n: int) -> "CycloNum":
+        """View this element of Q(zeta_n) as an element of Q(zeta_{new_n}),
+        via the field embedding zeta_n |-> zeta_{new_n}**(new_n // n) (valid
+        whenever n divides new_n). A plain rational constant (n is None)
+        embeds trivially.
+
+        This is needed whenever one algebra combines structure maps that
+        naturally live in different cyclotomic fields -- e.g.
+        ``quantum_sl2_quasi``'s R-matrix needs q**(t**2/2), a genuine
+        half-integer power of q (t is always odd), so it lives in
+        Q(zeta_{4p}) while Delta/S/Phi only ever need integer powers of q
+        and live in the smaller Q(zeta_{2p}); embedding lets the two be
+        multiplied together.
+
+        Memoised per instance (keyed on ``new_n``): the auto-widening in
+        ``_aligned`` calls this on every mixed-field operation, and the
+        *same* small-field CycloNum instances (e.g. multiply_basis's
+        memoised results, or a coproduct's handful of distinct
+        coefficients) recur across a great many such operations once a
+        bigger element like an R-matrix (hundreds of terms) is combined
+        with a smaller one -- recomputing the embedding from scratch each
+        time was the dominant cost in check_r_matrix_intertwiner.
+        """
+        if self.n == new_n:
+            return self
+        if self._embed_cache is not None and new_n in self._embed_cache:
+            return self._embed_cache[new_n]
+        if self.n is None:
+            result = CycloNum(new_n, self.poly)
+        else:
+            if new_n % self.n != 0:
+                raise ValueError(
+                    f"cannot embed Q(zeta_{self.n}) into Q(zeta_{new_n}): {self.n} does not divide {new_n}"
+                )
+            k = new_n // self.n
+            coeffs = [Fraction(0)] * (k * (len(self.poly.coeffs) - 1) + 1)
+            for i, c in enumerate(self.poly.coeffs):
+                coeffs[i * k] = c
+            result = CycloNum(new_n, Poly(coeffs))
+        if self._embed_cache is None:
+            self._embed_cache = {}
+        self._embed_cache[new_n] = result
+        return result
+
     def is_zero(self) -> bool:
         return self.poly.is_zero()
 
@@ -309,7 +373,6 @@ class CycloNum:
         other = CycloNum._as_cn(other)
         if other is NotImplemented:
             return NotImplemented
-        self._combine_n(other)
         return (self - other).is_zero()
 
     def __hash__(self):

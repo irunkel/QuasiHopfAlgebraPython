@@ -144,6 +144,28 @@ def tensor(a: Element, b: Element) -> Element:
     return result
 
 
+def permute_factors(elem: Element, perm: Tuple[int, ...]) -> Element:
+    """Reorder the tensor factors of an n-fold tensor element: the factor
+    at position ``i`` of the result is the factor at position ``perm[i]``
+    of ``elem`` (so ``perm`` is a tuple of the same length as the tensor
+    arity, e.g. ``(1, 2, 0)`` sends ``tens[a1,a2,a3]`` to
+    ``tens[a2,a3,a1]``). Used for axioms that need a specific leg
+    permutation of the associator, e.g. the hexagon axiom, and generalises
+    the original Mathematica code's ``flip`` (the 2-factor case,
+    ``perm=(1,0)``)."""
+    result = Element()
+    for key, coeff in elem.terms.items():
+        factors = _factors_of(key)
+        new_factors = tuple(factors[i] for i in perm)
+        result.add_term(_key_from_factors(new_factors), coeff)
+    return result
+
+
+def flip(elem: Element) -> Element:
+    """Swap the two factors of a 2-fold tensor element."""
+    return permute_factors(elem, (1, 0))
+
+
 def apply_to_factor(elem: Element, position: int, func: Callable[[Element], Element]) -> Element:
     """Apply the linear map ``func`` to the tensor factor at ``position``
     (0-indexed) of every term of ``elem``, leaving the other factors
@@ -182,5 +204,14 @@ def tensor_mul(alg, a: Element, b: Element) -> Element:
             for fa, fb in zip(factorsA, factorsB):
                 prod = alg.mul(Element.basis(fa), Element.basis(fb))
                 piece = prod if piece is None else tensor(piece, prod)
-            result = result + (cA * cB) * piece
+            # Accumulate directly via add_term rather than `result = result
+            # + scalar * piece`: that would rebuild (copy every existing
+            # term of) `result` on every single iteration of this loop --
+            # fine when result stays small, but quadratic once it grows to
+            # the hundreds of terms an R-matrix has (this was the actual
+            # cost behind a ~40s R-matrix intertwiner check, not the
+            # R-matrix computation itself).
+            scalar = cA * cB
+            for k, c in piece.terms.items():
+                result.add_term(k, scalar * c)
     return result

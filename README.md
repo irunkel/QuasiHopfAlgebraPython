@@ -25,12 +25,31 @@ from the original Mathematica implementation
 (`reference/hopf-Uqsl2-quasi.txt`). Verified symbolically (exactly, not
 numerically) for a range of `(p, t)`: associativity, coassociativity up
 to the associator (the "pentagon-adjacent" axiom), `Delta` being an
-algebra homomorphism, the counit axioms, the pentagon identity, and the
-(quasi-)antipode axiom.
+algebra homomorphism, the counit axioms, the pentagon identity, the
+(quasi-)antipode axiom, the evaluation/coevaluation identities, the
+universal R-matrix (intertwiner property, plus an independent
+closed-form cross-check), the hexagon axioms, the monodromy element
+(also cross-checked against an independent closed form), the Drinfeld
+element, the ribbon element (including its exact Gauss-sum
+normalisation) and its defining properties, and the "F" element
+relating `Delta` and `S`. This is now full parity with `testall` in the
+original Mathematica code.
 
-Not yet ported: the R-matrix, ribbon element, hexagon axioms, and
-Drinfeld element. See `CLAUDE.md` for the plan and for the
-architecture in more depth.
+Second example: `U_res sl(2)` with `K^p = 1` (`RestrictedSl2`) -- the
+honest Hopf algebra of the paper's Section 4.1 (`\UresSL2`), but with
+`K` of order `p` instead of `2p`. Not a Mathematica port (there's no
+reference file for it); verified against every required axiom, and
+exhaustively cross-checked as the exact quotient of `QuantumSl2Quasi`'s
+underlying algebra by `K^p = 1`. Surprisingly (the paper states
+`\UresSL2` itself, with `K^{2p} = 1`, has *no* R-matrix), this quotient
+*does* have a universal R-matrix, and from it a monodromy element,
+Drinfeld element and ribbon element -- all verified against the same
+axioms as `QuantumSl2Quasi`'s, and cross-checked against projecting
+`QuantumSl2Quasi`'s corresponding elements through the quotient. See
+`restricted_sl2.py`'s module docstring for the precise definitions and
+derivations.
+
+See `CLAUDE.md` for the architecture in more depth.
 
 ## Quick example
 
@@ -39,7 +58,13 @@ from hopfsym.examples import QuantumSl2Quasi
 from hopfsym import axioms
 
 alg = QuantumSl2Quasi(p=3, t=1)   # 2p'th root of unity, dimension 2p^3 = 54
-axioms.check_all(alg)             # runs every axiom check, prints PASS/FAIL
+axioms.check_all(alg)             # runs the core quasi-Hopf axioms, prints PASS/FAIL
+
+# The R-matrix/ribbon structure is optional (not every algebra has one),
+# so it's checked separately:
+axioms.check_r_matrix_intertwiner(alg)
+axioms.check_hexagon(alg)
+axioms.check_ribbon(alg)
 ```
 
 ## Running the tests
@@ -61,6 +86,7 @@ src/hopfsym/
     qring.py           # two coefficient rings: free q, and q a root of unity
     examples/
         quantum_sl2_quasi.py   # U_q^{(Phi)}sl(2), see above
+        restricted_sl2.py      # U_res sl(2) with K^p = 1, see above
 tests/
 reference/
     hopf-Uqsl2-quasi.txt        # original Mathematica source this was ported from

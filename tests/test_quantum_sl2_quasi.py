@@ -1,8 +1,10 @@
 """Regression tests for the U_q^{(Phi)}sl(2) example, checking it
-against every generic quasi-Hopf axiom in hopfsym.axioms, for a few
-small (p, t). These mirror what ``testall`` does in the original
-Mathematica code (reference/hopf-Uqsl2-quasi.txt), minus the R-matrix /
-ribbon / hexagon checks, which are not yet ported (see CLAUDE.md).
+against every required (non-optional) quasi-Hopf axiom in
+hopfsym.axioms, for a few small (p, t). These mirror what ``testall``
+does in the original Mathematica code (reference/hopf-Uqsl2-quasi.txt)
+for the core algebra; the R-matrix/ribbon/hexagon/Drinfeld/F-element
+checks (optional quasi-triangular structure) are in
+test_quantum_sl2_quasi_braiding.py instead.
 """
 
 import sys

@@ -1,5 +1,6 @@
 """Concrete algebras built on the hopfsym framework."""
 
 from .quantum_sl2_quasi import QuantumSl2Quasi
+from .restricted_sl2 import RestrictedSl2
 
-__all__ = ["QuantumSl2Quasi"]
+__all__ = ["QuantumSl2Quasi", "RestrictedSl2"]

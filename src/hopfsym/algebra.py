@@ -50,6 +50,28 @@ class QuasiHopfAlgebra:
       used in the (quasi-)antipode axiom. For an honest Hopf algebra
       these are both just ``unit()``.
 
+    Optional (only for algebras that are additionally quasi-triangular /
+    ribbon -- most are not, so these default to ``NotImplementedError``
+    rather than being abstract):
+
+    - ``r_matrix()``: the universal R-matrix, an element of H (x) H,
+      making the algebra quasi-triangular (see
+      ``axioms.check_r_matrix_intertwiner``, ``axioms.check_hexagon``).
+    - ``ribbon()``: the ribbon element, an element of H, extending a
+      quasi-triangular structure to a ribbon one (see
+      ``axioms.check_ribbon``).
+    - ``drinfeld()``: the Drinfeld element, an element of H, built from
+      Phi, R, S, alpha and beta (see ``axioms.check_ribbon``, which
+      checks it against the ribbon element). Although this is in
+      principle computable generically from the other structure maps for
+      any quasi-triangular quasi-Hopf algebra, it is kept as a
+      per-algebra method (like ``r_matrix``/``ribbon``) rather than
+      derived automatically in ``axioms.py``, matching this package's
+      preference for small hand-written pieces over generic machinery.
+    - ``f_element()``: the element F relating Delta and S (Drinfeld's
+      paper), built from Phi, Delta, S, alpha and beta -- no R-matrix
+      needed (see ``axioms.check_s_delta_compatibility``).
+
     ``mul`` (the bilinear extension of ``multiply_basis``) is provided
     here and should not need to be overridden.
     """
@@ -83,6 +105,19 @@ class QuasiHopfAlgebra:
         raise NotImplementedError
 
     def beta(self) -> Element:
+        raise NotImplementedError
+
+    # -- optional: quasi-triangular / ribbon structure -----------------
+    def r_matrix(self) -> Element:
+        raise NotImplementedError
+
+    def ribbon(self) -> Element:
+        raise NotImplementedError
+
+    def drinfeld(self) -> Element:
+        raise NotImplementedError
+
+    def f_element(self) -> Element:
         raise NotImplementedError
 
     # -- provided for free --------------------------------------------
