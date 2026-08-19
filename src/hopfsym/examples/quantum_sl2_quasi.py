@@ -69,6 +69,7 @@ from fractions import Fraction
 from ..algebra import QuasiHopfAlgebra
 from ..element import Element, TensorKey, tensor
 from ..qring import CycloNum
+from ..unicode_fmt import TENSOR, superscript
 
 # A basis key is a triple (a, b, c) representing E^a F^b K^c,
 # 0 <= a, b < p, 0 <= c < 2p.
@@ -574,7 +575,7 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:
         """A human-readable string for an Element in this algebra's basis,
-        e.g. ``"2*E^2 F K^3 + (1+q)*K""`` instead of ``Element``'s generic
+        e.g. ``"2*E² F K³ + (1+q)*K""`` instead of ``Element``'s generic
         ``repr`` (which only knows basis keys as opaque tuples -- see
         element.py's module docstring). Coefficients that are CycloNum
         values are shown as polynomials in ``q`` (the field's generator is
@@ -609,10 +610,10 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
 
     def _format_key(self, key) -> str:
         if isinstance(key, TensorKey):
-            return " (x) ".join(self._format_key(k) for k in key)
+            return f" {TENSOR} ".join(self._format_key(k) for k in key)
         a, b, c = key
         factors = [
-            f"{letter}^{exp}" if exp > 1 else letter
+            f"{letter}{superscript(exp)}" if exp > 1 else letter
             for letter, exp in (("E", a), ("F", b), ("K", c))
             if exp != 0
         ]
@@ -629,7 +630,7 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         if c.n is None:
             return str(c.poly.coeffs[0])
         if c.n == 2 * self.p:
-            power = lambda k: "" if k == 0 else ("q" if k == 1 else f"q^{k}")
+            power = lambda k: "" if k == 0 else ("q" if k == 1 else f"q{superscript(k)}")
         elif c.n == 4 * self.p:
             # x = zeta_{4p} = q**(1/2): even k is an integer power of q,
             # odd k a genuine half-integer one.
@@ -637,11 +638,11 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
                 if k == 0:
                     return ""
                 if k % 2 == 0:
-                    return "q" if k == 2 else f"q^{k // 2}"
-                return "q^(1/2)" if k == 1 else f"q^({k}/2)"
+                    return "q" if k == 2 else f"q{superscript(k // 2)}"
+                return f"q{superscript('(1/2)')}" if k == 1 else f"q{superscript(f'({k}/2)')}"
         else:  # pragma: no cover - fallback for an unanticipated field
             symbol = f"zeta_{c.n}"
-            power = lambda k: "" if k == 0 else (symbol if k == 1 else f"{symbol}^{k}")
+            power = lambda k: "" if k == 0 else (symbol if k == 1 else f"{symbol}{superscript(k)}")
 
         terms = []
         for k, coeff in enumerate(c.poly.coeffs):

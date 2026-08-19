@@ -100,6 +100,7 @@ from __future__ import annotations
 from ..algebra import QuasiHopfAlgebra
 from ..element import Element, TensorKey, tensor
 from ..qring import CycloNum
+from ..unicode_fmt import TENSOR, superscript
 
 # A basis key is a triple (a, b, c) representing E^a F^b K^c,
 # 0 <= a, b, c < p.
@@ -452,7 +453,7 @@ class RestrictedSl2(QuasiHopfAlgebra):
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:
-        """Human-readable string, e.g. ``"2*E^2 F K + (1-q)*K""`` -- see
+        """Human-readable string, e.g. ``"2*E² F K + (1-q)*K""`` -- see
         QuantumSl2Quasi.pretty for the analogous formatter (this one is
         simpler: only one cyclotomic field, Q(zeta_{2p}), is ever in
         play)."""
@@ -483,10 +484,10 @@ class RestrictedSl2(QuasiHopfAlgebra):
 
     def _format_key(self, key) -> str:
         if isinstance(key, TensorKey):
-            return " (x) ".join(self._format_key(k) for k in key)
+            return f" {TENSOR} ".join(self._format_key(k) for k in key)
         a, b, c = key
         factors = [
-            f"{letter}^{exp}" if exp > 1 else letter
+            f"{letter}{superscript(exp)}" if exp > 1 else letter
             for letter, exp in (("E", a), ("F", b), ("K", c))
             if exp != 0
         ]
@@ -501,18 +502,18 @@ class RestrictedSl2(QuasiHopfAlgebra):
         if c.n is None:
             return str(c.poly.coeffs[0])
         if c.n == 2 * self.p:
-            power = lambda k: "" if k == 0 else ("q" if k == 1 else f"q^{k}")
+            power = lambda k: "" if k == 0 else ("q" if k == 1 else f"q{superscript(k)}")
         elif c.n == 4 * self.p:
             # x = zeta_{4p} = q**(1/2) -- only ribbon() ever produces this.
             def power(k):
                 if k == 0:
                     return ""
                 if k % 2 == 0:
-                    return "q" if k == 2 else f"q^{k // 2}"
-                return "q^(1/2)" if k == 1 else f"q^({k}/2)"
+                    return "q" if k == 2 else f"q{superscript(k // 2)}"
+                return f"q{superscript('(1/2)')}" if k == 1 else f"q{superscript(f'({k}/2)')}"
         else:  # pragma: no cover - fallback for an unanticipated field
             symbol = f"zeta_{c.n}"
-            power = lambda k: "" if k == 0 else (symbol if k == 1 else f"{symbol}^{k}")
+            power = lambda k: "" if k == 0 else (symbol if k == 1 else f"{symbol}{superscript(k)}")
         terms = []
         for k, coeff in enumerate(c.poly.coeffs):
             if coeff == 0:
