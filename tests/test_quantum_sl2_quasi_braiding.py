@@ -3,7 +3,7 @@ U_q^{(Phi)}sl(2): the R-matrix, hexagon axioms, monodromy element,
 Drinfeld element, ribbon element and its properties, and the "F" element
 relating Delta and S. These mirror ``testExpression``, ``testRinter``,
 ``testHexagon``, ``testEvalCoeval``, ``testRibbon`` and ``testSDeltaR`` in
-the original Mathematica code (reference/hopf-Uqsl2-quasi.txt).
+the original Mathematica implementation this was ported from.
 
 Kept separate from test_quantum_sl2_quasi.py (which covers the core
 algebra/bialgebra/antipode axioms) since these all live one field up, in

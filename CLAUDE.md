@@ -17,12 +17,13 @@ light and readable over clever/general.
 
 The first worked example, `U_q^{(Phi)}sl(2)`
 (`src/hopfsym/examples/quantum_sl2_quasi.py`), is a direct port of
-`reference/hopf-Uqsl2-quasi.txt`, Ingo's own Mathematica code
-implementing the algebra from Creutzig-Gainutdinov-Runkel,
-arXiv:1712.07260 (Ingo is a co-author). When extending or debugging
-that example, that Mathematica file is the ground truth to check
-against, line by line if needed -- it's authoritative, not just a
-rough reference.
+`hopf-Uqsl2-quasi.txt`, Ingo's own Mathematica code implementing the
+algebra from Creutzig-Gainutdinov-Runkel, arXiv:1712.07260 (Ingo is a
+co-author). That file lives at `~/ClaudeFolder/HopfAlgebraTesting` on
+Ingo's machine (not copied into this repo -- see "Where this project
+lives" below); when extending or debugging that example, it's the
+ground truth to check against, line by line if needed -- it's
+authoritative, not just a rough reference.
 
 A second example, `U_res sl(2)` with `K^p = 1`
 (`src/hopfsym/examples/restricted_sl2.py`), is the honest Hopf algebra
@@ -73,8 +74,8 @@ Salpha/Sbeta) is ported so far -- not the R-matrix/ribbon element from
 the same section, per Ingo's explicit "just the quasi-Hopf data for now"
 request; that's the natural next piece if/when asked for.
 
-There is no Mathematica reference for this algebra either (see
-`reference/README.md`) -- verification instead leans on two facts the
+There is no Mathematica reference for this algebra either --
+verification instead leans on two facts the
 paper states explicitly right after the definition (Remark after
 eq:Q-antipode-def): an honest-Hopf-algebra special case (N even,
 beta^2=1 implies Phi trivial, Salpha=Sbeta=1), and a fully spelled-out
@@ -378,10 +379,12 @@ before/after reference, not a substitute for git history).
    `tests/test_quantum_sl2_quasi.py`: run `axioms.check_all` (or the
    individual checks) for a few small parameter choices.
 5. If you hand-derive a formula from a paper or existing code (as with
-   the Mathematica port here), keep the source close by (a `reference/`
-   file, or a docstring citation) -- when something fails, being able
-   to diff against ground truth line-by-line is what actually finds the
-   bug, as opposed to re-deriving from scratch under time pressure.
+   the Mathematica port here), keep the source easy to get back to (a
+   docstring citation to where it lives, e.g. `quantum_sl2_quasi.py`'s
+   citations of `hopf-Uqsl2-quasi.txt`) -- when something fails, being
+   able to diff against ground truth line-by-line is what actually
+   finds the bug, as opposed to re-deriving from scratch under time
+   pressure.
 6. If there's no ground-truth source to diff against line-by-line (as
    with `restricted_sl2.py`, which has no Mathematica reference), look
    for an *independent* cross-check instead of trusting internal
@@ -480,8 +483,8 @@ cross-checks (`testExpression`) -- see
 Two pieces the *original Mathematica source itself* never finished are
 correspondingly still absent here: the Hopf pairing (`hopfpair`) and the
 monodromy-matrix non-degeneracy check (`testMonodromy`) are both left
-commented out with a `TODO` in `reference/hopf-Uqsl2-quasi.txt` -- there
-is no working reference to port them against yet.
+commented out with a `TODO` in `hopf-Uqsl2-quasi.txt` -- there is no
+working reference to port them against yet.
 
 If a new algebra needs the R-matrix/ribbon/Drinfeld machinery, the
 pattern that worked here: implement `r_matrix()`/`ribbon()`/
@@ -528,11 +531,13 @@ light" principle above before it's needed), but when it comes up:
   made there need a git bundle to transfer back to the local checkout.
 - GitHub: https://github.com/irunkel/QuasiHopfAlgebraPython (the
   canonical source of truth / durable history across sessions).
-- The original Mathematica reference material (the arXiv PDF and the
-  `.tex` source) lives in `~/ClaudeFolder/HopfAlgebraTesting` on Ingo's
-  machine; only the Mathematica `.txt` source is copied into this
-  repo's `reference/` folder, since it's what the port is checked
-  against directly.
+- The original Mathematica reference material (the arXiv PDFs, `.tex`
+  sources, and `hopf-Uqsl2-quasi.txt`, the file `quantum_sl2_quasi.py`
+  was ported from) lives in `~/ClaudeFolder/HopfAlgebraTesting` on
+  Ingo's machine, not in this repo -- it was removed from a `reference/`
+  folder here since it's not accessible to anyone cloning the repo
+  externally, and the arXiv citations in `README.md` already cover the
+  mathematical origins for them.
 
 ## Running tests
 

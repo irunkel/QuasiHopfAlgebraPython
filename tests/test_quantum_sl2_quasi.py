@@ -4,7 +4,7 @@ hopfsym.axioms, for randomly chosen (p, t) (see tests/_random_model.py --
 a fresh draw every run, not the same fixed case every time; on failure,
 unittest's subTest reports which (p, t) was used, and axioms.py's checks
 themselves report the random sample seed). These mirror what ``testall``
-does in the original Mathematica code (reference/hopf-Uqsl2-quasi.txt)
+does in the original Mathematica implementation this was ported from,
 for the core algebra; the R-matrix/ribbon/hexagon/Drinfeld/F-element
 checks (optional quasi-triangular structure) are in
 test_quantum_sl2_quasi_braiding.py instead.

@@ -57,7 +57,51 @@ Each example also has a runnable `..._usage.py` walkthrough (defining
 relations, example coproducts, then the axiom checks) in
 `src/hopfsym/examples/` -- run as a plain script, or step through
 cell-by-cell in an editor that understands `# %%` markers (e.g. VSCode's
-Python extension).
+Python extension, see below).
+
+## Running the interactive examples in VSCode
+
+The `..._usage.py` files are meant to be stepped through cell by cell
+(each `# %%` marker starts a new cell) rather than run all at once, so
+you can inspect each result before moving to the next. VSCode supports
+this via two free extensions. Starting from nothing:
+
+1. **Install VSCode.** Download it from
+   [code.visualstudio.com](https://code.visualstudio.com/) and run the
+   installer (Windows/Mac/Linux all supported).
+2. **Install the Python extension.** In VSCode, open the Extensions
+   view (the icon in the left sidebar that looks like four squares, or
+   `Ctrl+Shift+X` / `Cmd+Shift+X`), search for "Python", and install the
+   one published by Microsoft. Search for "Jupyter" too and install
+   that one as well if it isn't pulled in automatically -- it's what
+   gives `# %%` cells their "Run Cell" buttons.
+3. **Clone the repository.** You need `git` (comes with most systems
+   already, otherwise get it from [git-scm.com](https://git-scm.com/)).
+   Open a terminal, `cd` into whichever folder you want the project to
+   live in, and run:
+
+   ```bash
+   git clone https://github.com/irunkel/QuasiHopfAlgebraPython.git
+   ```
+
+   This creates a `QuasiHopfAlgebraPython` subfolder with the full
+   project in it.
+4. **Open the project in VSCode.** Either run `cd QuasiHopfAlgebraPython`
+   then `code .` in that same terminal, or, from VSCode's File menu, use
+   "Open Folder..." and pick the `QuasiHopfAlgebraPython` folder you
+   just cloned.
+5. **Open a usage file**, e.g.
+   `src/hopfsym/examples/restricted_sl2_usage.py`, from the Explorer
+   sidebar on the left.
+6. **Run the first cell.** Click "Run Cell" above the first `# %%`
+   block (or put the cursor in it and press `Shift+Enter`). The first
+   time, VSCode asks which Python interpreter to use -- any Python 3
+   works, since the project has no external dependencies to install.
+   This opens an "Interactive Window" panel showing that cell's output.
+7. **Keep going.** `Shift+Enter` runs the current cell and moves to the
+   next, so you can step through the defining relations, coproducts and
+   axiom checks one at a time -- or use "Run All"/"Run All Cells" at the
+   top of the file to run the whole thing in one go.
 
 ## Running the tests
 

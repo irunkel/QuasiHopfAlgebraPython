@@ -17,7 +17,7 @@ parameter, or q specialised to an actual root of unity.
   times gives ``K^{2p} E K^{-2p} = q^{4p} E``, and since the left side
   must equal E (because K^{2p} = 1), consistency *forces*
   ``q^{4p} = 1`` -- so q cannot be a free variable there. The original
-  Mathematica source (reference/hopf-Uqsl2-quasi.txt) handles this by
+  Mathematica implementation this was ported from handles this by
   specialising q to e^{i pi / p}, a primitive 2p'th root of unity, and
   its ``qqreduce`` routine is precisely a hand-rolled version of what
   ``CycloNum`` does directly: reduction modulo the minimal (cyclotomic)

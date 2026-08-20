@@ -9,11 +9,11 @@ This is a direct port of the algebra data given in Section 3.1
     of symplectic fermions (arXiv:1207.3611).
 
 (``~/ClaudeFolder/HopfAlgebraTesting/arXiv-1706.08164v3/SF-qHopf-revised.tex``
-on Ingo's machine -- a sibling checkout to this repo, *not* copied in
-here, see ``reference/README.md`` -- is the ground truth this was
-transcribed from. There is no Mathematica reference for this algebra,
-so verification here leans on the paper's own Remark right after the
-definition, see below, plus the generic axiom checks in ``axioms.py``.)
+on Ingo's machine -- not part of this repo -- is the ground truth this
+was transcribed from. There is no Mathematica reference for this
+algebra, so verification here leans on the paper's own Remark right
+after the definition, see below, plus the generic axiom checks in
+``axioms.py``.)
 
 Only the quasi-Hopf data (product, coproduct, counit, associator,
 antipode, evaluation/coevaluation elements) is ported here -- the
