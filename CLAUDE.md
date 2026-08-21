@@ -48,13 +48,19 @@ bigger algebra `RestrictedSl2` is a quotient of, not about it), but it's
 the kind of thing worth re-verifying rather than assuming if either
 example's definition changes -- it was established computationally
 (`tests/test_restricted_sl2.py`'s `BraidingTests`), not just asserted.
-`RestrictedSl2.r_matrix()`/`.drinfeld()` have clean from-scratch closed
-forms (see the module docstring's "Where these formulas come from");
-`.ribbon()` does not (the K^p=1 quotient of the Gauss-sum exponent is
-parity-in-p-dependent) and is instead computed by literally reusing
-`QuantumSl2Quasi.ribbon()`'s formula with the final K-exponent reduced
-mod p -- a legitimate, exact technique (not a numerical shortcut), just
-worth knowing so it isn't mistaken for an oversight.
+`RestrictedSl2.r_matrix()` has a clean from-scratch closed form (see the
+module docstring's "Where these formulas come from"); `drinfeld()`
+doesn't need one -- it's `QuasiHopfAlgebra`'s generic formula (see
+"Adding a new algebra" below), which for this algebra's trivial Phi
+happens to collapse to the classical Hopf-algebra closed form
+`u = sum S(r2).r1`, checked as a regression test rather than
+hand-implemented (`test_drinfeld_matches_classical_hopf_formula`).
+`.ribbon()` doesn't have a from-scratch closed form either (the K^p=1
+quotient of the Gauss-sum exponent is parity-in-p-dependent) and is
+instead computed by literally reusing `QuantumSl2Quasi.ribbon()`'s
+formula with the final K-exponent reduced mod p -- a legitimate, exact
+technique (not a numerical shortcut), just worth knowing so it isn't
+mistaken for an oversight.
 
 A third example, `Q(N, beta)` (`src/hopfsym/examples/symplectic_fermion.py`,
 class `SymplecticFermionQ`), is the symplectic fermion ribbon quasi-Hopf
@@ -69,10 +75,17 @@ different relations (sign flips, not q-powers; a fixed central-idempotent
 correction term e1 when two conjugate generators meet in the wrong order,
 not a recursively-built commutator like `QuantumSl2Quasi._comm_ef`), so
 its `_reduce_word` in `symplectic_fermion.py` is not a copy of the other
-two's, it's its own thing. Only the quasi-Hopf data (product through
-Salpha/Sbeta) is ported so far -- not the R-matrix/ribbon element from
-the same section, per Ingo's explicit "just the quasi-Hopf data for now"
-request; that's the natural next piece if/when asked for.
+two's, it's its own thing. Initially only the quasi-Hopf data (product
+through Salpha/Sbeta) was ported, per Ingo's explicit "just the
+quasi-Hopf data for now" request; the R-matrix and ribbon element from
+the same section (eq:R+Riv, eq:ribbon+ribinv) were added later, once
+asked for -- unlike `QuantumSl2Quasi`'s/`RestrictedSl2`'s, both stay
+entirely within Q(zeta_8) (no field extension needed, since i and beta
+already live there). `monodromy`/`drinfeld`/`f_element` are not
+implemented here at all -- they're `QuasiHopfAlgebra`'s generic formulas
+(see "Adding a new algebra" below), cross-checked against independent
+closed forms from the paper's "Some special elements of Q" section
+(`tests/test_symplectic_fermion.py`'s `SpecialElementTests`).
 
 There is no Mathematica reference for this algebra either --
 verification instead leans on two facts the
@@ -213,11 +226,12 @@ Element (element.py)
     ``alg.counit(x)`` -- see "Element * Element" below.
 
 QuasiHopfAlgebra (algebra.py)
-    the interface: basis(), unit(), multiply_basis() [+ mul(), elt() and
-    tag(), given for free], comul(), counit(), antipode(), associator(),
-    associator_inv(), alpha(), beta() -- required; r_matrix(), ribbon(),
-    drinfeld(), f_element() -- optional (quasi-triangular/ribbon
-    structure only, default to NotImplementedError).
+    the interface: basis(), unit(), multiply_basis(), comul(), counit(),
+    antipode(), associator(), associator_inv(), alpha(), beta() --
+    required; r_matrix(), ribbon() -- optional (quasi-triangular/ribbon
+    structure only, default to NotImplementedError). mul(), elt(), tag()
+    and, once r_matrix()/associator() etc. are there, monodromy(),
+    drinfeld(), f_element() too -- all provably generic, given for free.
 
 axioms.py
     generic checkers written only against that interface, in terms of
@@ -235,16 +249,18 @@ examples/quantum_sl2_quasi.py, examples/restricted_sl2.py
     U_q^{(Phi)}sl(2) and its K^p=1 quotient. multiply_basis is
     implemented via _reduce_word, a small term-rewriting routine
     operating on a list of (letter, exponent) tokens -- this is *the*
-    place each algebra's relations live; every other structure map
-    (comul, antipode, r_matrix, ribbon, drinfeld, f_element, ...) only
-    ever calls self.mul(), which bottoms out in _reduce_word.
+    place each algebra's relations live; every other hand-written
+    structure map (comul, antipode, r_matrix, ribbon, ...) only ever
+    calls self.mul(), which bottoms out in _reduce_word. Neither
+    overrides monodromy()/drinfeld()/f_element() -- both just use
+    QuasiHopfAlgebra's generic versions.
 
 examples/symplectic_fermion.py
     Q(N, beta), the symplectic fermion algebra -- a structurally
     different example (anticommuting generators, not q-deformed ones),
     with its own from-scratch _reduce_word (sign flips and a fixed
     central-idempotent correction term, not q-powers or a recursive
-    commutator). Only the quasi-Hopf data, not r_matrix/ribbon/etc yet.
+    commutator). Full ribbon quasi-Hopf structure, same as the other two.
 ```
 
 ### `Element * Element`: tagged elements, for interactive use
@@ -397,6 +413,15 @@ before/after reference, not a substitute for git history).
    re-derived closed forms (`testExpression` in the Mathematica source).
    A relationship like this between two examples is usually available
    whenever one is a variant/limit/quotient of another -- look for it.
+   When no such relationship exists either (as with
+   `symplectic_fermion.py`'s R-matrix/ribbon addition -- nothing to
+   quotient/derive it from), a cheap extra check that the generic axioms
+   aren't passing vacuously: temporarily sabotage the new formula (e.g.
+   `alg.r_matrix = lambda: orig() + tensor(one, one)`) and confirm the
+   relevant `check_*` actually fails -- this caught nothing here, but it
+   would have caught the `RestrictedSl2` hexagon check's vacuous pass on
+   a trivial `R = 1(x)1` before the pentagon axioms happen to be trivial
+   too (see `check_hexagon`'s docstring).
 
 ## Performance notes
 
@@ -476,9 +501,9 @@ its intertwiner property (`testRinter`), the hexagon axioms
 element and its defining properties (`testRibbon`), the "F" element and
 S-Delta compatibility (`testSDeltaR`), and the explicit closed-form
 cross-checks (`testExpression`) -- see
-`src/hopfsym/examples/quantum_sl2_quasi.py` (`r_matrix`, `monodromy`,
-`drinfeld`, `ribbon`, `f_element`) and
-`tests/test_quantum_sl2_quasi_braiding.py`.
+`src/hopfsym/examples/quantum_sl2_quasi.py` (`r_matrix`, `ribbon` --
+`monodromy`/`drinfeld`/`f_element` are `QuasiHopfAlgebra`'s generic
+versions, see `algebra.py`) and `tests/test_quantum_sl2_quasi_braiding.py`.
 
 Two pieces the *original Mathematica source itself* never finished are
 correspondingly still absent here: the Hopf pairing (`hopfpair`) and the
@@ -486,11 +511,15 @@ monodromy-matrix non-degeneracy check (`testMonodromy`) are both left
 commented out with a `TODO` in `hopf-Uqsl2-quasi.txt` -- there is no
 working reference to port them against yet.
 
-If a new algebra needs the R-matrix/ribbon/Drinfeld machinery, the
-pattern that worked here: implement `r_matrix()`/`ribbon()`/
-`drinfeld()`/`f_element()` as methods on the algebra (they're optional in
-`QuasiHopfAlgebra`, defaulting to `NotImplementedError`), and reuse the
-generic checkers in `axioms.py`
+If a new algebra needs the R-matrix/ribbon machinery, the pattern that
+worked here: implement `r_matrix()`/`ribbon()` as methods on the algebra
+(they're optional in `QuasiHopfAlgebra`, defaulting to
+`NotImplementedError`) -- `monodromy()`/`drinfeld()`/`f_element()` come
+for free from those (see `QuasiHopfAlgebra`'s docstring), no need to
+implement them too unless the algebra's own presentation gives a
+simpler closed form worth checking the generic version against (see
+`RestrictedSl2`'s/`SymplecticFermionQ`'s regression tests for examples).
+Reuse the generic checkers in `axioms.py`
 (`check_r_matrix_intertwiner`/`check_hexagon`/`check_ribbon`/
 `check_s_delta_compatibility`) rather than writing new ones.
 

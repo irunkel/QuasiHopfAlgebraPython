@@ -5,7 +5,14 @@ explicitly in the paper (arXiv:1706.08164, Remark right after
 eq:Q-antipode-def), rather than a Mathematica reference (there isn't
 one for this algebra).
 
-Only the quasi-Hopf data is tested here (no R-matrix/ribbon yet).
+The R-matrix/ribbon element themselves (BraidingTests below) have no
+comparable paper remark or independent cross-check available, so
+verification there leans entirely on the generic axiom checks in
+axioms.py, run across every valid (N, beta_power) for N in {1,2,3}.
+drinfeld()/f_element() (generic, provided by QuasiHopfAlgebra -- see
+algebra.py) do have one: the paper's "Some special elements of Q"
+section (3.2) gives independent closed forms for both, checked in
+SpecialElementTests below.
 """
 
 import sys
@@ -21,6 +28,7 @@ from hopfsym.element import Element, tensor, tensor_mul, apply_to_factor
 from hopfsym.examples import SymplecticFermionQ
 
 from _random_model import random_N, valid_beta_powers
+from _special_elements import symplectic_fermion_expected_drinfeld, symplectic_fermion_expected_f_element
 
 
 class BasicRelationsTests(unittest.TestCase):
@@ -156,6 +164,76 @@ class PaperRemarkTests(unittest.TestCase):
                 self.assertEqual(actual_delta_id, expected_delta_id)
             with self.subTest(N=N, beta_power=bp, which="(id x Delta)Delta(f-)"):
                 self.assertEqual(actual_id_delta, expected_id_delta)
+
+
+class BraidingTests(unittest.TestCase):
+    """R-matrix, monodromy, Drinfeld and ribbon elements, verified
+    against the same generic axioms as QuantumSl2Quasi's/RestrictedSl2's
+    quasi-triangular structure (check_r_matrix_intertwiner, check_hexagon,
+    check_ribbon, check_s_delta_compatibility) -- the R-matrix/ribbon
+    element themselves have no independent closed-form cross-check
+    available for this algebra (unlike QuantumSl2Quasi's/RestrictedSl2's),
+    so this is the only verification for those two specifically. (See
+    SpecialElementTests below for drinfeld()/f_element(), which do have
+    one.)"""
+
+    def _check(self, N, beta_power):
+        alg = SymplecticFermionQ(N=N, beta_power=beta_power)
+        with self.subTest(N=N, beta_power=beta_power, check="r_matrix_intertwiner"):
+            self.assertTrue(axioms.check_r_matrix_intertwiner(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="hexagon"):
+            self.assertTrue(axioms.check_hexagon(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="ribbon"):
+            self.assertTrue(axioms.check_ribbon(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="s_delta_compatibility"):
+            self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
+
+    def test_axioms_N1_exhaustive_beta(self):
+        # dimension 2^4=16, cheap -- every valid beta_power for N=1.
+        for bp in valid_beta_powers(1):
+            self._check(N=1, beta_power=bp)
+
+    def test_axioms_N2_exhaustive_beta(self):
+        # dimension 2^6=64, still cheap (a couple of seconds per
+        # beta_power) -- every valid beta_power for N=2.
+        for bp in valid_beta_powers(2):
+            self._check(N=2, beta_power=bp)
+
+    # N=3 (dimension 2^8=256) is deliberately *not* covered here --
+    # individually timed at ~70s total for all four checks (check_ribbon
+    # alone is ~60s of that), same reasoning as the p=4 exclusions in
+    # test_restricted_sl2.py/test_quantum_sl2_quasi_braiding.py (see
+    # CLAUDE.md's performance notes). tests/soak_test.py's random sweep
+    # covers it instead, without slowing down the regular suite.
+
+
+class SpecialElementTests(unittest.TestCase):
+    """Independent closed forms from the paper's "Some special elements
+    of Q" section (Section 3.2, right after Factorisability), checked
+    against the generic drinfeld()/f_element() (see
+    hopfsym.algebra.QuasiHopfAlgebra) -- unlike the R-matrix/ribbon
+    element (BraidingTests above), the paper gives something concrete to
+    cross-check these two against for this specific algebra, not just
+    the generic axioms."""
+
+    CASES = [(1, 1), (2, 0), (2, 2), (3, 1)]
+
+    def test_f_element_matches_explicit_formula(self):
+        # eq:def:F-Q (see tests/_special_elements.py -- also used by
+        # soak_test.py):
+        #   F = e0 (x) 1 + e1 (x) (K^N . e0) + beta^2(-iK)^N.e1 (x) e1
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                self.assertEqual(alg.f_element(), symplectic_fermion_expected_f_element(alg))
+
+    def test_drinfeld_matches_explicit_formula(self):
+        # eq:sqs+sqsinvbr-Q (see tests/_special_elements.py):
+        #   u = (e0.K + e1.beta.(-iK)^N) . prod_{i=1}^N (1 - 2 f_i^+ f_i^-)
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                self.assertEqual(alg.drinfeld(), symplectic_fermion_expected_drinfeld(alg))
 
 
 class GeneratorAccessorTests(unittest.TestCase):

@@ -126,10 +126,7 @@ class RestrictedSl2(QuasiHopfAlgebra):
         self._comul_power_cache = {"E": {}, "F": {}, "K": {}}
         self._antipode_power_cache = {"E": {}, "F": {}}
         self._r_matrix_cache = None
-        self._monodromy_cache = None
-        self._drinfeld_cache = None
         self._ribbon_cache = None
-        self._f_element_cache = None
 
     def q(self, k: int) -> CycloNum:
         """q**k, as an element of Q(zeta_{2p}) -- same q = e^{i pi/p} as
@@ -410,34 +407,12 @@ class RestrictedSl2(QuasiHopfAlgebra):
         self._r_matrix_cache = result
         return result
 
-    def monodromy(self) -> Element:
-        """The monodromy matrix M = R_21 . R."""
-        if self._monodromy_cache is not None:
-            return self._monodromy_cache
-        from ..element import flip, tensor_mul
-
-        R = self.r_matrix()
-        result = tensor_mul(self, flip(R), R)
-        self._monodromy_cache = result
-        return result
-
-    def drinfeld(self) -> Element:
-        """The Drinfeld element u = sum S(r2) . r1, for R = sum r1 (x) r2
-        -- the classical formula for an (honest) quasitriangular Hopf
-        algebra (Phi trivial collapses the general quasi-Hopf formula to
-        this, see module docstring)."""
-        if self._drinfeld_cache is not None:
-            return self._drinfeld_cache
-
-        result = Element()
-        for key, c in self.r_matrix().terms.items():
-            r1, r2 = key
-            term = self.mul(self.antipode(Element.basis(r2)), Element.basis(r1))
-            for k2, c2 in term.terms.items():
-                result.add_term(k2, c * c2)
-
-        self._drinfeld_cache = result
-        return result
+    # monodromy()/drinfeld() are generic (see QuasiHopfAlgebra) -- not
+    # overridden here. Since Phi is trivial for this algebra, drinfeld()
+    # collapses to the classical Hopf-algebra formula u = sum S(r2) . r1
+    # (for R = sum r1 (x) r2) -- checked as a regression test against
+    # this generic version in tests/test_restricted_sl2.py, rather than
+    # hand-implemented here.
 
     def ribbon(self) -> Element:
         r"""The ribbon element, an element of H:
@@ -474,14 +449,10 @@ class RestrictedSl2(QuasiHopfAlgebra):
         self._ribbon_cache = result
         return result
 
-    def f_element(self) -> Element:
-        """The element F relating Delta and S -- trivial (F = 1 (x) 1)
-        since Phi is trivial here; see module docstring."""
-        if self._f_element_cache is not None:
-            return self._f_element_cache
-        one = self.unit()
-        self._f_element_cache = tensor(one, one)
-        return self._f_element_cache
+    # f_element() is generic (see QuasiHopfAlgebra) -- not overridden
+    # here. Since Phi is trivial for this algebra, it collapses to the
+    # trivial F = 1 (x) 1 -- checked as a regression test against this
+    # generic version in tests/test_restricted_sl2.py.
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:

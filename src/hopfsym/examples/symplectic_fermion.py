@@ -15,9 +15,12 @@ algebra, so verification here leans on the paper's own Remark right
 after the definition, see below, plus the generic axiom checks in
 ``axioms.py``.)
 
-Only the quasi-Hopf data (product, coproduct, counit, associator,
-antipode, evaluation/coevaluation elements) is ported here -- the
-R-matrix and ribbon element from the same section are not yet ported.
+The full ribbon quasi-Hopf structure is ported: product, coproduct,
+counit, associator, antipode, evaluation/coevaluation elements, and (see
+``r_matrix()``/``ribbon()``) the universal R-matrix and ribbon element
+from the same section, verified exactly against ``axioms.check_all``
+plus ``check_r_matrix_intertwiner``, ``check_hexagon``, ``check_ribbon``
+and ``check_s_delta_compatibility`` across every valid (N, beta_power).
 
 ## Generators and relations
 
@@ -50,6 +53,22 @@ beta^4 = (-1)^N becomes beta_power % 2 == N % 2 (matching the paper's
 "four possible choices of beta" for given N: the four residues of the
 right parity mod 8).
 
+## R-matrix and ribbon element
+
+``r_matrix()`` and ``ribbon()`` are ported from eq:R+Riv/eq:ribbon+ribinv
+(Section 3.1) -- both entirely within Q(zeta_8), unlike
+``QuantumSl2Quasi``'s R-matrix/ribbon, which need a field extension
+(``embed()``) since q**(1/2) genuinely isn't in Q(zeta_{2p}); here both
+scalars that appear (i, beta) already live in the algebra's one fixed
+field. ``monodromy()``, ``drinfeld()`` and ``f_element()`` are *not*
+overridden here -- they're provably generic (Phi/R/S/alpha/beta only, no
+algebra-specific data), so they're provided for free by
+``QuasiHopfAlgebra`` itself (see its docstring). The paper's own
+"Some special elements of Q" section (Section 3.2) gives independent
+closed forms for both, used as regression tests against these generic
+implementations in tests/test_symplectic_fermion.py rather than
+reimplemented here.
+
 ## Verification strategy (no Mathematica reference exists)
 
 Remark right after eq:Q-antipode-def in the paper gives two independent,
@@ -64,6 +83,18 @@ tests/test_symplectic_fermion.py):
   ``check_twisted_coassociativity`` checks generically; comparing
   against these two explicit formulas directly checks ``comul`` in
   isolation, independent of whether ``associator`` is also right.
+
+The paper gives no comparable explicit remark to check the R-matrix or
+ribbon element against directly, so those are verified purely via the
+generic checks in ``axioms.py`` (``check_r_matrix_intertwiner``,
+``check_hexagon``, ``check_ribbon``, ``check_s_delta_compatibility``),
+run across every valid (N, beta_power) pair for N in {1,2,3} (see
+tests/test_symplectic_fermion.py's ``BraidingTests``) -- weaker than an
+independent closed-form cross-check, but every one of those four axioms
+is a genuinely non-trivial identity a wrong transcription would very
+likely fail (confirmed by deliberately breaking the R-matrix formula
+during development and checking that ``check_hexagon``/``check_ribbon``
+correctly caught it).
 """
 
 from __future__ import annotations
@@ -104,6 +135,8 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._antipode_K_power_cache = {}
         self._antipode_basis_cache = {}
         self._comul_basis_cache = {}
+        self._r_matrix_cache = None
+        self._ribbon_cache = None
 
         # e0 = (1+K^2)/2, e1 = (1-K^2)/2: central idempotents, used all
         # over the structure maps below -- computed once here (tagged,
@@ -405,6 +438,90 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         """Sbeta = e0 + beta^2 (iK)^N e1."""
         scalar = self.beta_scalar() ** 2 * self.i() ** self.N
         return self.e0 + self.mul(scalar * self._K(self.N), self.e1)
+
+    # -- R-matrix, monodromy, Drinfeld and ribbon elements -----------------
+    def _cartan_factor(self, n: int, m: int) -> Element:
+        r"""rho_{n,m} = 1/2 sum_{a,b in {0,1}} (-1)^{ab} i^{-an+bm} K^a (x) K^b,
+        for n, m in {0,1} (eq:car-fac in the paper)."""
+        i = self.i()
+        result = Element()
+        for a in (0, 1):
+            for b in (0, 1):
+                sign = -1 if (a and b) else 1
+                power = (-a * n + b * m) % 4
+                coeff = Fraction(sign, 2) * (i**power)
+                result = result + coeff * tensor(self._K(a), self._K(b))
+        return result
+
+    def _r_matrix_cartan_sum(self, beta_sign: int) -> Element:
+        """sum_{n,m in {0,1}} beta^{beta_sign*n*m} * rho_{n,m} * e_n (x) e_m
+        -- the first factor of R (beta_sign=+1)."""
+        beta = self.beta_scalar()
+        idem = (self.e0, self.e1)
+        result = Element()
+        for n in (0, 1):
+            for m in (0, 1):
+                scalar = beta ** (beta_sign * n * m)
+                piece = scalar * self._cartan_factor(n, m)
+                result = result + tensor_mul(self, piece, tensor(idem[n], idem[m]))
+        return result
+
+    def r_matrix(self) -> Element:
+        r"""The universal R-matrix, an element of H (x) H:
+
+            R = (sum_{n,m in {0,1}} beta^{nm} rho_{n,m} e_n (x) e_m) .
+                prod_{k=1}^N (1(x)1 - 2 f_k^- omega_- (x) f_k^+)
+
+        Ported from eq:R+Riv in the paper (Section 3.1). Entirely within
+        Q(zeta_8) -- no field extension needed (contrast
+        ``QuantumSl2Quasi.r_matrix()``), since both i and beta already
+        live there.
+        """
+        if self._r_matrix_cache is not None:
+            return self._r_matrix_cache
+
+        one = self.unit()
+        omega_minus = self._omega(-1)
+        product = tensor(one, one)
+        for k in range(1, self.N + 1):
+            pos_plus, pos_minus = 2 * (k - 1), 2 * (k - 1) + 1
+            fk_plus, fk_minus = self._f(pos_plus), self._f(pos_minus)
+            local = tensor(one, one) - 2 * tensor(self.mul(fk_minus, omega_minus), fk_plus)
+            product = tensor_mul(self, product, local)
+
+        result = tensor_mul(self, self._r_matrix_cartan_sum(+1), product)
+        self._r_matrix_cache = result
+        return result
+
+    # monodromy()/drinfeld() are generic (see QuasiHopfAlgebra) -- not
+    # overridden here.
+
+    def ribbon(self) -> Element:
+        r"""The ribbon element, an element of H:
+
+            v = (e0 - beta*i*K*e1) . prod_{k=1}^N (1 - 2 f_k^+ f_k^-)
+
+        Ported from eq:ribbon+ribinv in the paper (Section 3.1).
+        """
+        if self._ribbon_cache is not None:
+            return self._ribbon_cache
+
+        beta = self.beta_scalar()
+        K_e1 = self.mul(self._K(1), self.e1)
+        prefactor = self.e0 - (beta * self.i()) * K_e1
+
+        product = self.unit()
+        for k in range(1, self.N + 1):
+            pos_plus, pos_minus = 2 * (k - 1), 2 * (k - 1) + 1
+            fk_plus, fk_minus = self._f(pos_plus), self._f(pos_minus)
+            local = self.unit() - 2 * self.mul(fk_plus, fk_minus)
+            product = self.mul(product, local)
+
+        result = self.mul(prefactor, product)
+        self._ribbon_cache = result
+        return result
+
+    # f_element() is generic (see QuasiHopfAlgebra) -- not overridden here.
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:

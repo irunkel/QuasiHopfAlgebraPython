@@ -23,7 +23,7 @@ notes on the planned quasi-Hopf group-coalgebra extension).
 
 from __future__ import annotations
 
-from .element import Element
+from .element import Element, apply_to_factor, flip, tensor, tensor_mul
 
 
 class QuasiHopfAlgebra:
@@ -60,23 +60,38 @@ class QuasiHopfAlgebra:
     - ``ribbon()``: the ribbon element, an element of H, extending a
       quasi-triangular structure to a ribbon one (see
       ``axioms.check_ribbon``).
+
+    ``mul`` (the bilinear extension of ``multiply_basis``), ``elt`` and
+    ``tag`` (see their own docstrings) are provided here and should not
+    need to be overridden. So are three more structure maps that turn
+    out to be *provably generic* -- expressible purely in terms of the
+    interface above, with no algebra-specific data at all, unlike
+    ``multiply_basis``/``comul``/``antipode``/``r_matrix``/``ribbon``
+    (which genuinely differ per algebra and stay hand-written per
+    example):
+
+    - ``monodromy()``: M = R_21 . R, an element of H (x) H. Needs only
+      ``r_matrix()``.
     - ``drinfeld()``: the Drinfeld element, an element of H, built from
       Phi, R, S, alpha and beta (see ``axioms.check_ribbon``, which
-      checks it against the ribbon element). Although this is in
-      principle computable generically from the other structure maps for
-      any quasi-triangular quasi-Hopf algebra, it is kept as a
-      per-algebra method (like ``r_matrix``/``ribbon``) rather than
-      derived automatically in ``axioms.py``, matching this package's
-      preference for small hand-written pieces over generic machinery.
+      checks it against the ribbon element).
     - ``f_element()``: the element F relating Delta and S (Drinfeld's
       paper), built from Phi, Delta, S, alpha and beta -- no R-matrix
       needed (see ``axioms.check_s_delta_compatibility``).
 
-    ``mul`` (the bilinear extension of ``multiply_basis``) and ``elt``
-    (a convenience for building a basis Element tagged with this algebra,
-    so that ``*`` between two such Elements means ``mul`` -- see
-    ``Element.__mul__``) are provided here and should not need to be
-    overridden.
+    Each of these three raises ``NotImplementedError`` naturally if a
+    prerequisite (typically ``r_matrix()``) isn't implemented, and each
+    is cached (a lazily-created instance attribute, so no ``__init__``
+    cooperation is needed from subclasses) -- computed once per algebra
+    instance. If an algebra's own presentation happens to give a
+    *simpler* closed form for one of these (e.g. because its associator
+    is trivial, or a paper it's ported from states one explicitly),
+    that's worth adding as a regression test comparing it against these
+    generic implementations, not reimplementing to override them -- see
+    e.g. ``tests/test_restricted_sl2.py``'s
+    ``test_drinfeld_matches_classical_hopf_formula``/
+    ``test_f_element_matches_trivial_formula``, or
+    ``tests/test_symplectic_fermion.py``'s explicit-formula checks.
     """
 
     # -- to be implemented by subclasses -----------------------------
@@ -117,12 +132,6 @@ class QuasiHopfAlgebra:
     def ribbon(self) -> Element:
         raise NotImplementedError
 
-    def drinfeld(self) -> Element:
-        raise NotImplementedError
-
-    def f_element(self) -> Element:
-        raise NotImplementedError
-
     # -- provided for free --------------------------------------------
     def mul(self, a: Element, b: Element) -> Element:
         """The bilinear extension of multiply_basis to general elements."""
@@ -158,4 +167,100 @@ class QuasiHopfAlgebra:
         once and then use ``*``/``Δ`` on ``Phi`` freely."""
         result = Element(dict(elem.terms))
         result.alg = self
+        return result
+
+    def monodromy(self) -> Element:
+        """The monodromy matrix M = R_21 . R, an element of H (x) H.
+        Needs only ``r_matrix()`` -- raises ``NotImplementedError``
+        (propagated from that call) if it isn't implemented. Cached (a
+        lazily-created instance attribute -- no ``__init__`` cooperation
+        needed from subclasses), so only computed once per instance."""
+        cached = getattr(self, "_monodromy_cache", None)
+        if cached is not None:
+            return cached
+        result = tensor_mul(self, flip(self.r_matrix()), self.r_matrix())
+        self._monodromy_cache = result
+        return result
+
+    def drinfeld(self) -> Element:
+        r"""The Drinfeld element, an element of H:
+
+            u = sum S(p2 . beta . S(p3)) . S(r2) . alpha . r1 . p1
+
+        summed over terms Phi = sum p1 (x) p2 (x) p3 and R = sum r1 (x) r2
+        (i.e. over Phi (x) R, a 5-fold tensor) -- the standard formula for
+        a quasi-triangular quasi-Hopf algebra (Drinfeld's paper), needing
+        only ``associator()``, ``r_matrix()``, ``antipode()``, ``alpha()``
+        and ``beta()``. Cached, see ``monodromy()``.
+
+        If an algebra's associator happens to be trivial, this collapses
+        to the classical Hopf-algebra formula ``u = sum S(r2) . r1`` --
+        worth checking as a regression test in that case (see
+        ``tests/test_restricted_sl2.py``) rather than reimplementing the
+        simplification here.
+        """
+        cached = getattr(self, "_drinfeld_cache", None)
+        if cached is not None:
+            return cached
+
+        alpha, beta = self.alpha(), self.beta()
+        result = Element()
+        for key, c in tensor(self.associator(), self.r_matrix()).terms.items():
+            p1, p2, p3, r1, r2 = key
+            inner = self.mul(self.mul(Element.basis(p2), beta), self.antipode(Element.basis(p3)))
+            term = self.antipode(inner)
+            for factor in (self.antipode(Element.basis(r2)), alpha, Element.basis(r1), Element.basis(p1)):
+                term = self.mul(term, factor)
+            for k2, c2 in term.terms.items():
+                result.add_term(k2, c * c2)
+
+        self._drinfeld_cache = result
+        return result
+
+    def f_element(self) -> Element:
+        r"""The element F relating Delta and S (Drinfeld's paper), used in
+        the S-Delta compatibility check
+        ``axioms.check_s_delta_compatibility``. Needs only
+        ``associator()``/``associator_inv()``, ``comul()``, ``antipode()``,
+        ``alpha()`` and ``beta()`` -- notably *not* ``r_matrix()``, unlike
+        ``monodromy()``/``drinfeld()``. Cached, see ``monodromy()``.
+
+        If an algebra's associator happens to be trivial, this collapses
+        to the trivial ``F = 1 (x) 1`` -- worth checking as a regression
+        test in that case (see ``tests/test_restricted_sl2.py``) rather
+        than reimplementing the simplification here.
+        """
+        cached = getattr(self, "_f_element_cache", None)
+        if cached is not None:
+            return cached
+
+        Phi = self.associator()
+        Phiinv = self.associator_inv()
+        alpha, beta = self.alpha(), self.beta()
+
+        xx = tensor_mul(self, tensor(self.unit(), Phi), apply_to_factor(Phiinv, 2, self.comul))
+
+        ga = Element()
+        for key, c in xx.terms.items():
+            a1, a2, a3, a4 = key
+            left = self.mul(self.mul(self.antipode(Element.basis(a2)), alpha), Element.basis(a3))
+            right = self.mul(self.mul(self.antipode(Element.basis(a1)), alpha), Element.basis(a4))
+            for k2, c2 in tensor(left, right).terms.items():
+                ga.add_term(k2, c * c2)
+
+        result = Element()
+        for key, c in Phi.terms.items():
+            a1, a2, a3 = key
+            part1 = Element()
+            for k, cc in self.comul(Element.basis(a1)).terms.items():
+                u, v = k
+                for k2, c2 in tensor(self.antipode(Element.basis(v)), self.antipode(Element.basis(u))).terms.items():
+                    part1.add_term(k2, cc * c2)
+            inner = self.mul(self.mul(Element.basis(a2), beta), self.antipode(Element.basis(a3)))
+            part3 = self.comul(inner)
+            term = tensor_mul(self, tensor_mul(self, part1, ga), part3)
+            for k2, c2 in term.terms.items():
+                result.add_term(k2, c * c2)
+
+        self._f_element_cache = result
         return result

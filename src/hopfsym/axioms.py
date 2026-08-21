@@ -321,6 +321,16 @@ def check_hexagon(alg, verbose=True) -> bool:
     its argument tagged for ``Δ`` to dispatch; Phi/Phi^-1 don't need it
     -- every product they appear in also has an R-derived (hence
     tagged) operand, which supplies the algebra via ``*``'s wildcard.
+
+    A degenerate case worth knowing about: when Phi is trivial (an
+    honest Hopf algebra), this passes *vacuously* for the trivial
+    R = 1 (x) 1 too, since both sides of each equation above collapse to
+    the same tensor of units regardless of what R actually is -- it says
+    nothing about whether R genuinely intertwines Delta
+    (``check_r_matrix_intertwiner`` catches that). Confirmed by
+    deliberately setting ``alg.r_matrix = lambda: tensor(alg.unit(),
+    alg.unit())`` on a trivial-Phi algebra and finding this still
+    returns True.
     """
     Phi = alg.associator()
     Phiinv = alg.associator_inv()

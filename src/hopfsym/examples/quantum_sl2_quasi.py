@@ -95,10 +95,7 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         self._antipode_power_cache = {"E": {}, "F": {}}
         self._qfact_cache = {}
         self._r_matrix_cache = None
-        self._monodromy_cache = None
-        self._drinfeld_cache = None
         self._ribbon_cache = None
-        self._f_element_cache = None
 
     def q(self, k: int) -> CycloNum:
         """q**k, as an element of Q(zeta_{2p}) -- q is a primitive 2p'th
@@ -446,42 +443,8 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         self._r_matrix_cache = result
         return result
 
-    def monodromy(self) -> Element:
-        """The monodromy matrix M = R_21 . R, an element of H (x) H
-        (``mon`` in the original Mathematica implementation)."""
-        if self._monodromy_cache is not None:
-            return self._monodromy_cache
-        from ..element import flip, tensor_mul
-
-        R = self.r_matrix()
-        result = tensor_mul(self, flip(R), R)
-        self._monodromy_cache = result
-        return result
-
-    def drinfeld(self) -> Element:
-        r"""The Drinfeld element, an element of H:
-
-            u = sum S(p2 . beta . S(p3)) . S(r2) . alpha . r1 . p1
-
-        summed over terms Phi = sum p1 (x) p2 (x) p3 and
-        R = sum r1 (x) r2 (x) (i.e. over Phi (x) R, a 5-fold tensor).
-        Ported from ``drin`` in the original Mathematica implementation."""
-        if self._drinfeld_cache is not None:
-            return self._drinfeld_cache
-
-        alpha, beta = self.alpha(), self.beta()
-        result = Element()
-        for key, c in tensor(self.associator(), self.r_matrix()).terms.items():
-            p1, p2, p3, r1, r2 = key
-            inner = self.mul(self.mul(Element.basis(p2), beta), self.antipode(Element.basis(p3)))
-            term = self.antipode(inner)
-            for factor in (self.antipode(Element.basis(r2)), alpha, Element.basis(r1), Element.basis(p1)):
-                term = self.mul(term, factor)
-            for k2, c2 in term.terms.items():
-                result.add_term(k2, c * c2)
-
-        self._drinfeld_cache = result
-        return result
+    # monodromy()/drinfeld() are generic (see QuasiHopfAlgebra) -- not
+    # overridden here.
 
     def ribbon(self) -> Element:
         r"""The ribbon element, an element of H:
@@ -527,50 +490,7 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         self._ribbon_cache = result
         return result
 
-    def f_element(self) -> Element:
-        r"""The element F relating Delta and S (Drinfeld's paper; ``ff``
-        in the original Mathematica implementation), used in the S-Delta
-        compatibility check ``axioms.check_s_delta_compatibility``.
-
-        Unlike the R-matrix/ribbon/Drinfeld element, F only needs Phi,
-        Delta, S, alpha, beta -- no R-matrix -- so it lives in the same
-        field Q(zeta_{2p}) as the rest of the algebra.
-        """
-        if self._f_element_cache is not None:
-            return self._f_element_cache
-
-        from ..element import apply_to_factor, tensor_mul
-
-        Phi = self.associator()
-        Phiinv = self.associator_inv()
-        alpha, beta = self.alpha(), self.beta()
-
-        xx = tensor_mul(self, tensor(self.unit(), Phi), apply_to_factor(Phiinv, 2, self.comul))
-
-        ga = Element()
-        for key, c in xx.terms.items():
-            a1, a2, a3, a4 = key
-            left = self.mul(self.mul(self.antipode(Element.basis(a2)), alpha), Element.basis(a3))
-            right = self.mul(self.mul(self.antipode(Element.basis(a1)), alpha), Element.basis(a4))
-            for k2, c2 in tensor(left, right).terms.items():
-                ga.add_term(k2, c * c2)
-
-        result = Element()
-        for key, c in Phi.terms.items():
-            a1, a2, a3 = key
-            part1 = Element()
-            for k, cc in self.comul(Element.basis(a1)).terms.items():
-                u, v = k
-                for k2, c2 in tensor(self.antipode(Element.basis(v)), self.antipode(Element.basis(u))).terms.items():
-                    part1.add_term(k2, cc * c2)
-            inner = self.mul(self.mul(Element.basis(a2), beta), self.antipode(Element.basis(a3)))
-            part3 = self.comul(inner)
-            term = tensor_mul(self, tensor_mul(self, part1, ga), part3)
-            for k2, c2 in term.terms.items():
-                result.add_term(k2, c * c2)
-
-        self._f_element_cache = result
-        return result
+    # f_element() is generic (see QuasiHopfAlgebra) -- not overridden here.
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:

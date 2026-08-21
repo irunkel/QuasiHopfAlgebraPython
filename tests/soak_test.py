@@ -1,13 +1,17 @@
 """Long-running stress test: repeatedly builds fresh random instances of
 every example algebra (the same randomisation as tests/_random_model.py
 and the test_*.py files -- same bounds, same helpers) and runs every
-axiom check against each, cycling through QuantumSl2Quasi -> RestrictedSl2
--> SymplecticFermionQ round-robin, for a configurable time budget
-(default one hour). The point is to exercise far more of the (p, t, N,
-beta_power) x random-basis-sample space than the regular, fast test
-suite does in one run -- useful for shaking out rare failures before a
-release, or after a change to shared machinery (element.py, algebra.py,
-axioms.py) that every example depends on.
+axiom check against each, plus (for RestrictedSl2/SymplecticFermionQ)
+the independent closed-form checks on drinfeld()/f_element() from
+tests/_special_elements.py -- the same comparisons test_restricted_sl2.py/
+test_symplectic_fermion.py make, reused here rather than duplicated.
+Cycles through QuantumSl2Quasi -> RestrictedSl2 -> SymplecticFermionQ
+round-robin, for a configurable time budget (default one hour). The
+point is to exercise far more of the (p, t, N, beta_power) x
+random-basis-sample space than the regular, fast test suite does in one
+run -- useful for shaking out rare failures before a release, or after a
+change to shared machinery (element.py, algebra.py, axioms.py) that
+every example depends on.
 
 Not a unittest module (no test_ prefix, so `python3 -m unittest discover
 -s tests` skips it) -- meant to be started directly from the shell::
@@ -42,6 +46,39 @@ from hopfsym import axioms
 from hopfsym.examples import QuantumSl2Quasi, RestrictedSl2, SymplecticFermionQ
 
 from _random_model import random_p, random_p_t, random_N_beta_power
+from _special_elements import (
+    restricted_sl2_expected_drinfeld,
+    restricted_sl2_expected_f_element,
+    symplectic_fermion_expected_drinfeld,
+    symplectic_fermion_expected_f_element,
+)
+
+
+def _make_explicit_formula_check(name, expected_fn):
+    """Wrap an expected-value function from _special_elements.py (an
+    independent closed form for drinfeld()/f_element(), available for
+    some algebras -- see that module's docstring) into a check matching
+    axioms.py's check_*(alg, verbose=True) -> bool signature, so it can
+    sit in a round's checks list alongside the generic axiom checks."""
+
+    def check(alg, verbose=True) -> bool:
+        actual = getattr(alg, name)()
+        expected = expected_fn(alg)
+        ok = actual == expected
+        if not ok and verbose:
+            print(f"  {name}() does not match its independent closed form")
+            print(f"    {name}() = {actual}")
+            print(f"    closed form = {expected}")
+        return ok
+
+    check.__name__ = f"check_{name}_matches_explicit_formula"
+    return check
+
+
+_check_restricted_sl2_drinfeld = _make_explicit_formula_check("drinfeld", restricted_sl2_expected_drinfeld)
+_check_restricted_sl2_f_element = _make_explicit_formula_check("f_element", restricted_sl2_expected_f_element)
+_check_symplectic_fermion_drinfeld = _make_explicit_formula_check("drinfeld", symplectic_fermion_expected_drinfeld)
+_check_symplectic_fermion_f_element = _make_explicit_formula_check("f_element", symplectic_fermion_expected_f_element)
 
 
 def _round_quantum_sl2_quasi():
@@ -66,6 +103,11 @@ def _round_restricted_sl2():
         ("check_hexagon", axioms.check_hexagon),
         ("check_ribbon", axioms.check_ribbon),
         ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
+        # generic drinfeld()/f_element() (QuasiHopfAlgebra) against the
+        # classical-Hopf-algebra closed forms this trivial-Phi algebra
+        # collapses to -- see tests/_special_elements.py.
+        ("check_drinfeld_matches_classical_hopf_formula", _check_restricted_sl2_drinfeld),
+        ("check_f_element_matches_trivial_formula", _check_restricted_sl2_f_element),
     ]
     return f"RestrictedSl2(p={p})", alg, checks
 
@@ -73,9 +115,18 @@ def _round_restricted_sl2():
 def _round_symplectic_fermion():
     N, beta_power = random_N_beta_power()
     alg = SymplecticFermionQ(N=N, beta_power=beta_power)
-    # No R-matrix/ribbon element ported yet for this one -- see its
-    # module docstring.
-    checks = [("check_all", axioms.check_all)]
+    checks = [
+        ("check_all", axioms.check_all),
+        ("check_r_matrix_intertwiner", axioms.check_r_matrix_intertwiner),
+        ("check_hexagon", axioms.check_hexagon),
+        ("check_ribbon", axioms.check_ribbon),
+        ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
+        # generic drinfeld()/f_element() (QuasiHopfAlgebra) against the
+        # paper's own closed forms (eq:sqs+sqsinvbr-Q, eq:def:F-Q) --
+        # see tests/_special_elements.py.
+        ("check_drinfeld_matches_explicit_formula", _check_symplectic_fermion_drinfeld),
+        ("check_f_element_matches_explicit_formula", _check_symplectic_fermion_f_element),
+    ]
     return f"SymplecticFermionQ(N={N}, beta_power={beta_power})", alg, checks
 
 

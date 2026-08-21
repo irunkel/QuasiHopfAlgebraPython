@@ -102,9 +102,18 @@ print(alg.pretty(alg.associator()))
 # %%
 # The full required axiom set (associativity, Delta a homomorphism,
 # counit, twisted coassociativity, pentagon, antipode,
-# evaluation/coevaluation). No optional quasi-triangular/ribbon checks
-# yet -- the R-matrix and ribbon element from the paper aren't ported.
-# check_all prints its own PASS/FAIL per axiom.
+# evaluation/coevaluation). check_all prints its own PASS/FAIL per axiom.
 axioms.check_all(alg)
+
+# %%
+# The optional quasi-triangular/ribbon structure (R-matrix, hexagon,
+# ribbon element) -- entirely within Q(zeta_8), no field extension
+# needed (contrast QuantumSl2Quasi/RestrictedSl2). Unlike check_all,
+# these only print internally on *failure*, so wrap in print() to see
+# the (expected) True on success too.
+print(axioms.check_r_matrix_intertwiner(alg))
+print(axioms.check_hexagon(alg))
+print(axioms.check_ribbon(alg))
+print(alg.pretty(alg.ribbon()))
 
 # %%

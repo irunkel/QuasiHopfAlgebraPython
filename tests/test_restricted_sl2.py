@@ -18,6 +18,7 @@ from hopfsym.element import Element, TensorKey
 from hopfsym.examples import QuantumSl2Quasi, RestrictedSl2
 
 from _random_model import random_p, random_p_t
+from _special_elements import restricted_sl2_expected_drinfeld, restricted_sl2_expected_f_element
 
 
 class RestrictedSl2AxiomTests(unittest.TestCase):
@@ -198,11 +199,19 @@ class BraidingTests(unittest.TestCase):
         self.assertTrue(axioms.check_ribbon(alg, verbose=True))
         self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
 
-    def test_f_element_trivial(self):
-        from hopfsym.element import tensor
-
+    def test_drinfeld_matches_classical_hopf_formula(self):
+        # Phi is trivial here (honest Hopf algebra), so the general
+        # 5-term quasi-Hopf drinfeld() formula (generic, see
+        # QuasiHopfAlgebra.drinfeld()) should collapse to the classical
+        # Hopf-algebra formula u = sum S(r2) . r1 for R = sum r1 (x) r2
+        # (see tests/_special_elements.py -- also used by soak_test.py).
         alg = RestrictedSl2(p=3)
-        self.assertEqual(alg.f_element(), tensor(alg.unit(), alg.unit()))
+        self.assertEqual(alg.drinfeld(), restricted_sl2_expected_drinfeld(alg))
+
+    def test_f_element_matches_trivial_formula(self):
+        # Same reasoning: Phi trivial collapses f_element() to 1 (x) 1.
+        alg = RestrictedSl2(p=3)
+        self.assertEqual(alg.f_element(), restricted_sl2_expected_f_element(alg))
 
 
 if __name__ == "__main__":
