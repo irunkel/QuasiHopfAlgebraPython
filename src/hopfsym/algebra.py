@@ -60,6 +60,14 @@ class QuasiHopfAlgebra:
     - ``ribbon()``: the ribbon element, an element of H, extending a
       quasi-triangular structure to a ribbon one (see
       ``axioms.check_ribbon``).
+    - ``r_matrix_inv()``/``ribbon_inv()``: the inverses of the above, if
+      an algebra's own presentation gives them directly (see
+      ``axioms.check_r_matrix_inverse``/``axioms.check_ribbon_inverse``,
+      which check them against ``r_matrix()``/``ribbon()``). Unlike
+      ``monodromy``/``drinfeld``/``f_element`` below, these are *not*
+      generic -- an inverse isn't computable from the interface alone in
+      general -- so they stay optional, per-algebra, like ``r_matrix()``/
+      ``ribbon()`` themselves.
 
     ``mul`` (the bilinear extension of ``multiply_basis``), ``elt`` and
     ``tag`` (see their own docstrings) are provided here and should not
@@ -130,6 +138,12 @@ class QuasiHopfAlgebra:
         raise NotImplementedError
 
     def ribbon(self) -> Element:
+        raise NotImplementedError
+
+    def r_matrix_inv(self) -> Element:
+        raise NotImplementedError
+
+    def ribbon_inv(self) -> Element:
         raise NotImplementedError
 
     # -- provided for free --------------------------------------------

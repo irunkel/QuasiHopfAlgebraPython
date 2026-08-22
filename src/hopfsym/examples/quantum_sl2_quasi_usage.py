@@ -37,7 +37,7 @@ def _find_src_dir() -> Path:
 sys.path.insert(0, str(_find_src_dir()))
 
 from hopfsym import axioms
-from hopfsym.element import Element, Δ, ε
+from hopfsym.element import Element, tensor, Δ, ε
 from hopfsym.examples import QuantumSl2Quasi
 
 alg = QuantumSl2Quasi(p=3, t=1)
@@ -56,15 +56,13 @@ if _ip is not None:
 
     _ip.display_formatter.formatters["text/plain"].for_type(Element, _pretty_element)
 
-# Generators. alg.elt(key) tags the Element with `alg`, so `*`/`**` mean
-# alg.mul/repeated alg.mul (never the tensor product -- use tensor(a, b)
-# explicitly for that); QuantumSl2Quasi has no E/F/K accessor properties
-# (unlike RestrictedSl2/SymplecticFermionQ), so basis keys are spelled
-# out directly: (a, b, c) means E^a F^b K^c.
-E, F, K = alg.elt((1, 0, 0)), alg.elt((0, 1, 0)), alg.elt((0, 0, 1))
+# Generators. alg.E/.F/.K/.Kinv are tagged properties (no parens) --
+# equivalent to alg.elt((1,0,0)) etc., just shorter to write; tagged so
+# `*`/`**` mean alg.mul/repeated alg.mul directly (never the tensor
+# product -- use tensor(a, b) explicitly for that).
+E, F, K, Kinv = alg.E, alg.F, alg.K, alg.Kinv
 
 q, qinv = alg.q(1), alg.q(-1)
-Kinv = alg.elt((0, 0, 2 * alg.p - 1))  # K^-1 = K^(2p-1), since K^(2p) = 1
 
 # %%
 # The defining relations (see the module docstring), each written so it

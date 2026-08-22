@@ -32,7 +32,7 @@ def _RRsec(alg):
     exponentiated brackets -- structurally different from r_matrix(), so
     agreement between the two is a real independent check."""
     p, t = alg.p, alg.t
-    e0, e1 = alg._idempotents()
+    e0, e1 = alg.e0, alg.e1
     combo_tens = [tensor(e0, e0), tensor(e0, e1), tensor(e1, e0), tensor(e1, e1)]
     result = Element()
     for n in range(p):

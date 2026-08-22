@@ -301,6 +301,27 @@ def check_r_matrix_intertwiner(alg, samples=None, verbose=True) -> bool:
     return True
 
 
+def check_r_matrix_inverse(alg, verbose=True) -> bool:
+    r"""R . R^-1 == 1 (x) 1 == R^-1 . R, where R = ``alg.r_matrix()`` and
+    R^-1 = ``alg.r_matrix_inv()`` are claimed to be (two-sided) inverses
+    of each other in H (x) H. Requires both (optional in the interface
+    -- an algebra can have an R-matrix without its own presentation
+    giving a closed form for the inverse)."""
+    R = alg.tag(alg.r_matrix())
+    Rinv = alg.tag(alg.r_matrix_inv())
+    one_one = tensor(alg.unit(), alg.unit())
+    lhs = R * Rinv
+    rhs = Rinv * R
+    if lhs != one_one or rhs != one_one:
+        if verbose:
+            print("R-matrix inverse check failed")
+            print(f"  R . R^-1 = {lhs}")
+            print(f"  R^-1 . R = {rhs}")
+            print(f"  1 (x) 1  = {one_one}")
+        return False
+    return True
+
+
 def check_hexagon(alg, verbose=True) -> bool:
     r"""The two hexagon axioms tying the associator Phi to the R-matrix R
     together (quasi-triangularity compatible with non-trivial
@@ -512,6 +533,27 @@ def check_ribbon(alg, verbose=True) -> bool:
             print(f"ribbon axiom failed: M.Delta(v) != v (x) v  (M.Delta(v) = {lhs}, v (x) v = {rhs})")
         return False
 
+    return True
+
+
+def check_ribbon_inverse(alg, verbose=True) -> bool:
+    r"""v . v^-1 == 1 == v^-1 . v, where v = ``alg.ribbon()`` and
+    v^-1 = ``alg.ribbon_inv()`` are claimed to be (two-sided) inverses of
+    each other. Requires both (optional in the interface -- an algebra
+    can have a ribbon element without its own presentation giving a
+    closed form for the inverse)."""
+    v = alg.tag(alg.ribbon())
+    vinv = alg.tag(alg.ribbon_inv())
+    one = alg.unit()
+    lhs = v * vinv
+    rhs = vinv * v
+    if lhs != one or rhs != one:
+        if verbose:
+            print("ribbon inverse check failed")
+            print(f"  v . v^-1 = {lhs}")
+            print(f"  v^-1 . v = {rhs}")
+            print(f"  1        = {one}")
+        return False
     return True
 
 

@@ -97,6 +97,22 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         self._r_matrix_cache = None
         self._ribbon_cache = None
 
+        # e0 = (1+K^p)/2, e1 = (1-K^p)/2: central idempotents, computed
+        # once here (tagged, see Element.__mul__) rather than re-derived
+        # untagged on every call via the old _idempotents() -- same
+        # design as SymplecticFermionQ.e0/.e1 (see its module docstring
+        # for why tagging these is safe: self.mul(...) always retags its
+        # own result with self regardless of its arguments' tags, and
+        # tensor(...) propagates .alg the same way +/- do, so a tagged
+        # intermediate can never leak an incorrect tag into an
+        # H^{(x)n} result that's supposed to stay untagged).
+        one = self.unit()
+        Kp = Element.basis((0, 0, self.p))
+        self.e0 = Fraction(1, 2) * (one + Kp)
+        self.e1 = Fraction(1, 2) * (one - Kp)
+        self.e0.alg = self
+        self.e1.alg = self
+
     def q(self, k: int) -> CycloNum:
         """q**k, as an element of Q(zeta_{2p}) -- q is a primitive 2p'th
         root of unity, see hopfsym.qring for why q cannot just be a free
@@ -140,13 +156,27 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
     def unit(self) -> Element:
         return Element.basis((0, 0, 0))
 
-    def _idempotents(self):
-        """e0 = (1 + K^p)/2,  e1 = (1 - K^p)/2."""
-        one = self.unit()
-        Kp = Element.basis((0, 0, self.p))
-        e0 = Fraction(1, 2) * (one + Kp)
-        e1 = Fraction(1, 2) * (one - Kp)
-        return e0, e1
+    @property
+    def E(self) -> Element:
+        """The generator E, tagged (see Element.__mul__) -- e.g.
+        ``alg.E * alg.F`` is ``alg.mul(alg.E, alg.F)``."""
+        return self.elt((1, 0, 0))
+
+    @property
+    def F(self) -> Element:
+        """The generator F, tagged -- see ``E``."""
+        return self.elt((0, 1, 0))
+
+    @property
+    def K(self) -> Element:
+        """The generator K, tagged -- see ``E``."""
+        return self.elt((0, 0, 1))
+
+    @property
+    def Kinv(self) -> Element:
+        """K^-1 = K^(2p-1), tagged (since K^(2p) = 1) -- e.g.
+        ``alg.K * alg.Kinv == alg.unit()``."""
+        return self.elt((0, 0, 2 * self.p - 1))
 
     # -- product ----------------------------------------------------------
     def multiply_basis(self, b1: BasisKey, b2: BasisKey) -> Element:
@@ -253,23 +283,16 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
 
     # -- coproduct --------------------------------------------------------
     def _comul_E1(self) -> Element:
-        e0, e1 = self._idempotents()
-        combo = e0 + self.q(self.t) * e1
-        return tensor(Element.basis((1, 0, 0)), Element.basis((0, 0, 1))) + tensor(
-            combo, Element.basis((1, 0, 0))
-        )
+        combo = self.e0 + self.q(self.t) * self.e1
+        return tensor(self.E, self.K) + tensor(combo, self.E)
 
     def _comul_F1(self) -> Element:
-        e0, e1 = self._idempotents()
-        combo = e0 + self.q(-self.t) * e1
-        left = self.mul(combo, Element.basis((0, 0, 2 * self.p - 1)))
-        return tensor(Element.basis((0, 1, 0)), self.unit()) + tensor(
-            left, Element.basis((0, 1, 0))
-        )
+        combo = self.e0 + self.q(-self.t) * self.e1
+        left = combo * self.Kinv
+        return tensor(self.F, self.unit()) + tensor(left, self.F)
 
     def _comul_K1(self) -> Element:
-        K1 = Element.basis((0, 0, 1))
-        return tensor(K1, K1)
+        return tensor(self.K, self.K)
 
     def comul(self, elem: Element) -> Element:
         result = Element()
@@ -280,22 +303,25 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
     def _comul_generator_power(self, letter: str, k: int) -> Element:
         """Delta(g)^k for g in {E, F, K}, built up *incrementally* and
         cached: computing Delta(E)^a for every a = 0, ..., p-1 this way
-        costs one tensor_mul per step (O(p) total across every basis
-        element sharing that E-power), instead of redoing an O(a)
-        multiplication chain from scratch for every single basis
-        element -- which is what made comul() the dominant cost for
-        p >= 4 before this cache existed.
+        costs one ``*`` per step (O(p) total across every basis element
+        sharing that E-power), instead of redoing an O(a) multiplication
+        chain from scratch for every single basis element -- which is
+        what made comul() the dominant cost for p >= 4 before this cache
+        existed. ``*`` (not ``tensor_mul`` spelled out) works since
+        ``_comul_E1``/``_comul_F1``/``_comul_K1`` are built from tagged
+        pieces; the k=0 base case is tagged explicitly (``self.tag``)
+        for the same reason as RestrictedSl2's -- ``_comul_basis``
+        multiplies three of these together, and if a=b=c=0 (the identity
+        basis element) all three would otherwise be untagged.
         """
         cache = self._comul_power_cache[letter]
         if k in cache:
             return cache[k]
         if k == 0:
-            result = tensor(self.unit(), self.unit())
+            result = self.tag(tensor(self.unit(), self.unit()))
         else:
-            from ..element import tensor_mul  # local import to avoid a cycle at module load
-
             generator1 = {"E": self._comul_E1, "F": self._comul_F1, "K": self._comul_K1}[letter]()
-            result = tensor_mul(self, self._comul_generator_power(letter, k - 1), generator1)
+            result = self._comul_generator_power(letter, k - 1) * generator1
         cache[k] = result
         return result
 
@@ -308,12 +334,10 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         if cached is not None:
             return cached
 
-        from ..element import tensor_mul  # local import to avoid a cycle at module load
-
         eE = self._comul_generator_power("E", a)
         eF = self._comul_generator_power("F", b)
         eK = self._comul_generator_power("K", c)
-        result = tensor_mul(self, tensor_mul(self, eE, eF), eK)
+        result = eE * eF * eK
         self._comul_basis_cache[key] = result
         return result
 
@@ -327,31 +351,37 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
 
     # -- antipode -------------------------------------------------------------
     def _antipode_E1(self) -> Element:
-        e0, e1 = self._idempotents()
-        combo = e0 + self.q(self.t) * e1
+        combo = self.e0 + self.q(self.t) * self.e1
+        # E.K^-1 -- already the reduced normal form, so this is the
+        # direct key, not self.E * self.Kinv (which would trigger a
+        # needless _reduce_word call for something already known for
+        # free); combo * EKinv itself is an existing product, so that
+        # part does use `*`.
         EKinv = Element.basis((1, 0, 2 * self.p - 1))
-        return -self.mul(combo, EKinv)
+        return -(combo * EKinv)
 
     def _antipode_F1(self) -> Element:
-        e0, e1 = self._idempotents()
-        combo = e0 + self.q(-self.t) * e1
-        K = Element.basis((0, 0, 1))
-        F = Element.basis((0, 1, 0))
-        return -self.mul(self.mul(combo, K), F)
+        combo = self.e0 + self.q(-self.t) * self.e1
+        return -(combo * self.K * self.F)
 
     def _antipode_power(self, letter: str, m: int) -> Element:
         """S(g^m) = S(g) * S(g^{m-1}) = S(g)^m (S is an anti-homomorphism
         and g^m is a product of a single generator with itself). Cached
         incrementally per letter, for the same reason as
-        _comul_generator_power above."""
+        _comul_generator_power above. The m=0 base case is tagged
+        explicitly (``self.tag``) for the same reason as
+        RestrictedSl2's -- ``_antipode_basis`` multiplies three of these
+        (well, two of these plus a directly-built sK) together, and if
+        a=b=c=0 (the identity basis element) sF/sE would otherwise both
+        be untagged."""
         cache = self._antipode_power_cache[letter]
         if m in cache:
             return cache[m]
         if m == 0:
-            result = self.unit()
+            result = self.tag(self.unit())
         else:
             generator1 = self._antipode_E1() if letter == "E" else self._antipode_F1()
-            result = self.mul(generator1, self._antipode_power(letter, m - 1))
+            result = generator1 * self._antipode_power(letter, m - 1)
         cache[m] = result
         return result
 
@@ -370,25 +400,23 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
         sK = Element.basis((0, 0, (-c) % (2 * self.p)))
         sF = self._antipode_power("F", b)
         sE = self._antipode_power("E", a)
-        result = self.mul(self.mul(sK, sF), sE)
+        result = sK * sF * sE
         self._antipode_basis_cache[key] = result
         return result
 
     # -- associator and evaluation/coevaluation elements ------------------------
     def associator(self) -> Element:
-        e0, e1 = self._idempotents()
         one = self.unit()
         term1 = tensor(tensor(one, one), one)
         Kmt_minus_one = Element.basis((0, 0, (-self.t) % (2 * self.p))) - one
-        term2 = tensor(tensor(e1, e1), Kmt_minus_one)
+        term2 = tensor(tensor(self.e1, self.e1), Kmt_minus_one)
         return term1 + term2
 
     def associator_inv(self) -> Element:
-        e0, e1 = self._idempotents()
         one = self.unit()
         term1 = tensor(tensor(one, one), one)
         Kt_minus_one = Element.basis((0, 0, self.t % (2 * self.p))) - one
-        term2 = tensor(tensor(e1, e1), Kt_minus_one)
+        term2 = tensor(tensor(self.e1, self.e1), Kt_minus_one)
         return term1 + term2
 
     def alpha(self) -> Element:
@@ -396,9 +424,8 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
 
     def beta(self) -> Element:
         # beta = e0 + K^{-t} e1  (note: -t, the gauge parameter, not -1)
-        e0, e1 = self._idempotents()
         Kmt = Element.basis((0, 0, (-self.t) % (2 * self.p)))
-        return e0 + self.mul(Kmt, e1)
+        return self.e0 + Kmt * self.e1
 
     # -- R-matrix -----------------------------------------------------------
     def r_matrix(self) -> Element:
@@ -411,10 +438,14 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
                 K^s E^n (x) K^r F^n
 
         Ported from ``RR`` in the original Mathematica implementation
-        (also eq:R-quasiH in the paper); K^s E^n and K^r F^n are put in normal
-        form (E^n K^s and F^n K^r, picking up q^{2sn} / q^{-2rn}
-        respectively) via the same K-past-E/F relation used everywhere
-        else in this module.
+        (also eq:R-quasiH in the paper). Computed once and cached, so
+        written to match the formula literally (``self.K ** s *
+        self.E ** n`` etc.) rather than hand-optimized: K^s E^n and
+        K^r F^n reduce to the normal form E^n K^s and F^n K^r
+        automatically via the same K-past-E/F relation used everywhere
+        else in this module, picking up the q^{2sn} / q^{-2rn}
+        reordering coefficients as part of that -- no longer hand-derived
+        separately.
         """
         if self._r_matrix_cache is not None:
             return self._r_matrix_cache
@@ -434,11 +465,10 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
                         t * t + 2 * t * r - 2 * t * (n + s),
                     )
                     bracket = sum((self.q_half(qA2 + e2) for e2 in bracket_exps2), CycloNum.zero(4 * p))
-                    reorder_coeff = self.q_half(4 * s * n - 4 * r * n)  # q^{2sn - 2rn}
-                    left_key = (n, 0, s % (2 * p))
-                    right_key = (0, n, r % (2 * p))
-                    total = coeff_n * bracket * reorder_coeff * Fraction(1, 4 * p)
-                    result.add_term(TensorKey((left_key, right_key)), total)
+                    scalar = coeff_n * bracket * Fraction(1, 4 * p)
+                    term = tensor(self.K ** s * self.E ** n, self.K ** r * self.F ** n)
+                    for key, c in term.terms.items():
+                        result.add_term(key, scalar * c)
 
         self._r_matrix_cache = result
         return result
@@ -483,7 +513,7 @@ class QuantumSl2Quasi(QuasiHopfAlgebra):
             for j in range(2 * p):
                 doubled_exp = 2 * n * j - n + (j + p + 1) ** 2
                 scalar = prefactor * self.q_half(doubled_exp) * coeff_n
-                basis_elem = self._reduce_word([("F", n), ("E", n), ("K", j)])
+                basis_elem = self.F ** n * self.E ** n * self.K ** j
                 for k, c in basis_elem.terms.items():
                     result.add_term(k, scalar * c)
 

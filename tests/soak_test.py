@@ -118,8 +118,10 @@ def _round_symplectic_fermion():
     checks = [
         ("check_all", axioms.check_all),
         ("check_r_matrix_intertwiner", axioms.check_r_matrix_intertwiner),
+        ("check_r_matrix_inverse", axioms.check_r_matrix_inverse),
         ("check_hexagon", axioms.check_hexagon),
         ("check_ribbon", axioms.check_ribbon),
+        ("check_ribbon_inverse", axioms.check_ribbon_inverse),
         ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
         # generic drinfeld()/f_element() (QuasiHopfAlgebra) against the
         # paper's own closed forms (eq:sqs+sqsinvbr-Q, eq:def:F-Q) --

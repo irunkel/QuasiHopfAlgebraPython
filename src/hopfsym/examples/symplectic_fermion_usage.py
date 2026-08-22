@@ -37,7 +37,7 @@ def _find_src_dir() -> Path:
 sys.path.insert(0, str(_find_src_dir()))
 
 from hopfsym import axioms
-from hopfsym.element import Element, Δ, ε
+from hopfsym.element import Element, tensor, Δ, ε
 from hopfsym.examples import SymplecticFermionQ
 
 alg = SymplecticFermionQ(N=2, beta_power=0)  # beta = 1
@@ -115,5 +115,13 @@ print(axioms.check_r_matrix_intertwiner(alg))
 print(axioms.check_hexagon(alg))
 print(axioms.check_ribbon(alg))
 print(alg.pretty(alg.ribbon()))
+
+# %%
+# The paper gives R^-1/v^-1 directly too (eq:R+Riv, eq:ribbon+ribinv) --
+# checked against r_matrix()/ribbon() by check_r_matrix_inverse/
+# check_ribbon_inverse.
+print(axioms.check_r_matrix_inverse(alg))
+print(axioms.check_ribbon_inverse(alg))
+print(alg.pretty(alg.ribbon_inv()))
 
 # %%

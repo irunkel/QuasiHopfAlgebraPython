@@ -228,10 +228,14 @@ Element (element.py)
 QuasiHopfAlgebra (algebra.py)
     the interface: basis(), unit(), multiply_basis(), comul(), counit(),
     antipode(), associator(), associator_inv(), alpha(), beta() --
-    required; r_matrix(), ribbon() -- optional (quasi-triangular/ribbon
-    structure only, default to NotImplementedError). mul(), elt(), tag()
-    and, once r_matrix()/associator() etc. are there, monodromy(),
-    drinfeld(), f_element() too -- all provably generic, given for free.
+    required; r_matrix(), ribbon(), r_matrix_inv(), ribbon_inv() --
+    optional (quasi-triangular/ribbon structure only, default to
+    NotImplementedError; the inverses are optional in their own right,
+    not generic -- an algebra can have r_matrix()/ribbon() without a
+    closed form for the inverse, see SymplecticFermionQ vs the other two
+    examples). mul(), elt(), tag() and, once r_matrix()/associator() etc.
+    are there, monodromy(), drinfeld(), f_element() too -- all provably
+    generic, given for free.
 
 axioms.py
     generic checkers written only against that interface, in terms of
@@ -240,10 +244,13 @@ axioms.py
     check_bialgebra_homomorphism, check_counit,
     check_twisted_coassociativity, check_pentagon, check_antipode,
     check_evaluation_coevaluation, and check_all() to run the required
-    ones together; check_r_matrix_intertwiner, check_hexagon,
-    check_ribbon, check_s_delta_compatibility for the optional
-    quasi-triangular/ribbon structure (not part of check_all, since not
-    every algebra has it -- call these separately, see README).
+    ones together; check_r_matrix_intertwiner, check_r_matrix_inverse,
+    check_hexagon, check_ribbon, check_ribbon_inverse,
+    check_s_delta_compatibility for the optional quasi-triangular/ribbon
+    structure (not part of check_all, since not every algebra has it --
+    call these separately, see README). The two `_inverse` checks need
+    r_matrix_inv()/ribbon_inv() specifically, a level more optional than
+    r_matrix()/ribbon() themselves (see algebra.py's docstring).
 
 examples/quantum_sl2_quasi.py, examples/restricted_sl2.py
     U_q^{(Phi)}sl(2) and its K^p=1 quotient. multiply_basis is
@@ -302,13 +309,13 @@ mostly use) behaves exactly as before.
 `Element.__pow__` (`E ** n`) is the same idea applied to repeated `*`:
 square-and-multiply (same pattern as `qring.CycloNum.__pow__`), requires
 a tagged `Element` for the same reason `*` does, `n=0` gives the
-algebra's unit. `RestrictedSl2.E`/`.F`/`.K` are properties (no parens)
+algebra's unit. `RestrictedSl2.E`/`.F`/`.K` and
+`QuantumSl2Quasi.E`/`.F`/`.K`/`.Kinv` are properties (no parens)
 returning `self.elt((1,0,0))` etc. -- the ergonomic way to get tagged
 generators in the first place, so you can write `alg.E * alg.F` or
 `alg.E ** p` directly rather than remembering the basis-key convention.
-These accessors are per-example (`QuantumSl2Quasi` could get the
-identical `E`/`F`/`K` properties; `SymplecticFermionQ` instead has
-`K` (property) and `f(i, eps)` (method, `eps = '+'`/`'-'`, `i` 1-indexed
+These accessors are per-example (`SymplecticFermionQ` instead has `K`
+(property) and `f(i, eps)` (method, `eps = '+'`/`'-'`, `i` 1-indexed
 matching the paper's `f_i^+-`) since its generators are indexed), not
 part of the generic interface, since which named generators exist is
 algebra-specific.
@@ -325,11 +332,12 @@ support Unicode letters per PEP 3131) rather than ASCII `Delta`/
 IPython/Jupyter's `\Delta<Tab>`/`\varepsilon<Tab>` completion types them
 directly.
 
-`SymplecticFermionQ.e0`/`.e1` (the central idempotents) are tagged too,
-and are computed *once* in `__init__` and used directly everywhere
-internally (`_omega`, `_comul_K1`, `_antipode_K1`, `_antipode_f`,
-`_assoc_third_factor`, `associator`, `associator_inv`, `beta` all read
-`self.e0`/`self.e1` -- there is no `_idempotents()` method any more).
+`SymplecticFermionQ.e0`/`.e1` and `QuantumSl2Quasi.e0`/`.e1` (the
+central idempotents) are tagged too, and are computed *once* in
+`__init__` and used directly everywhere internally (comul/antipode/
+associator/beta all read `self.e0`/`self.e1` -- neither example has a
+separate `_idempotents()` method any more; `RestrictedSl2` never had
+central idempotents to begin with, being an honest Hopf algebra).
 Tagging an internal "plain `H`" piece like this and reusing it freely is
 safe, not just for the top-level generators: `self.mul(...)`
 unconditionally retags its result with `self` regardless of its
@@ -519,9 +527,17 @@ for free from those (see `QuasiHopfAlgebra`'s docstring), no need to
 implement them too unless the algebra's own presentation gives a
 simpler closed form worth checking the generic version against (see
 `RestrictedSl2`'s/`SymplecticFermionQ`'s regression tests for examples).
-Reuse the generic checkers in `axioms.py`
-(`check_r_matrix_intertwiner`/`check_hexagon`/`check_ribbon`/
-`check_s_delta_compatibility`) rather than writing new ones.
+If the source also gives the inverses directly (as arXiv:1706.08164 does
+for `SymplecticFermionQ`, eq:R+Riv/eq:ribbon+ribinv), implement
+`r_matrix_inv()`/`ribbon_inv()` too and check them with
+`check_r_matrix_inverse`/`check_ribbon_inverse` -- unlike
+`monodromy`/`drinfeld`/`f_element`, these aren't generic (an inverse
+isn't derivable from the interface alone), so there's no free version to
+fall back on; skip them if the source doesn't give one. Reuse the
+generic checkers in `axioms.py`
+(`check_r_matrix_intertwiner`/`check_r_matrix_inverse`/`check_hexagon`/
+`check_ribbon`/`check_ribbon_inverse`/`check_s_delta_compatibility`)
+rather than writing new ones.
 
 ## Planned generalization: quasi-Hopf group-coalgebras
 

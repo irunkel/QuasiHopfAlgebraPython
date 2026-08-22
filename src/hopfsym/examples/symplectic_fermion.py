@@ -55,9 +55,12 @@ right parity mod 8).
 
 ## R-matrix and ribbon element
 
-``r_matrix()`` and ``ribbon()`` are ported from eq:R+Riv/eq:ribbon+ribinv
-(Section 3.1) -- both entirely within Q(zeta_8), unlike
-``QuantumSl2Quasi``'s R-matrix/ribbon, which need a field extension
+``r_matrix()``/``r_matrix_inv()`` and ``ribbon()``/``ribbon_inv()`` are
+ported from eq:R+Riv/eq:ribbon+ribinv (Section 3.1), which give both
+directions explicitly -- checked against each other by
+``axioms.check_r_matrix_inverse``/``axioms.check_ribbon_inverse`` -- both
+entirely within Q(zeta_8), unlike ``QuantumSl2Quasi``'s R-matrix/ribbon,
+which need a field extension
 (``embed()``) since q**(1/2) genuinely isn't in Q(zeta_{2p}); here both
 scalars that appear (i, beta) already live in the algebra's one fixed
 field. ``monodromy()``, ``drinfeld()`` and ``f_element()`` are *not*
@@ -103,7 +106,7 @@ from fractions import Fraction
 from itertools import product as _iproduct
 
 from ..algebra import QuasiHopfAlgebra
-from ..element import Element, TensorKey, tensor, tensor_mul
+from ..element import Element, TensorKey, tensor
 from ..qring import CycloNum
 from ..unicode_fmt import TENSOR, subscript, superscript
 
@@ -136,7 +139,9 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._antipode_basis_cache = {}
         self._comul_basis_cache = {}
         self._r_matrix_cache = None
+        self._r_matrix_inv_cache = None
         self._ribbon_cache = None
+        self._ribbon_inv_cache = None
 
         # e0 = (1+K^2)/2, e1 = (1-K^2)/2: central idempotents, used all
         # over the structure maps below -- computed once here (tagged,
@@ -301,11 +306,11 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     def _omega(self, sign: int) -> Element:
         """omega_+- = (e0 +- i*e1) . K."""
         combo = self.e0 + (sign * self.i()) * self.e1
-        return self.mul(combo, self._K(1))
+        return combo * self._K(1)
 
     def _comul_K1(self) -> Element:
         """Delta(K) = K (x) K - (1+(-1)^N) (e1.K) (x) (e1.K)."""
-        e1K = self.mul(self.e1, self._K(1))
+        e1K = self.e1 * self._K(1)
         K = self._K(1)
         correction = (1 + (-1) ** self.N) * tensor(e1K, e1K)
         return tensor(K, K) - correction
@@ -317,7 +322,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         if k == 0:
             result = tensor(self.unit(), self.unit())
         else:
-            result = tensor_mul(self, self._comul_K_power(k - 1), self._comul_K1())
+            result = self._comul_K_power(k - 1) * self._comul_K1()
         self._comul_K_power_cache[k] = result
         return result
 
@@ -348,9 +353,9 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         for pos, b in enumerate(bits):
             if b:
                 factor = self._comul_f(pos)
-                result = factor if result is None else tensor_mul(self, result, factor)
+                result = factor if result is None else result * factor
         Kfactor = self._comul_K_power(k)
-        result = Kfactor if result is None else tensor_mul(self, result, Kfactor)
+        result = Kfactor if result is None else result * Kfactor
         self._comul_basis_cache[key] = result
         return result
 
@@ -366,13 +371,13 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     def _antipode_K1(self) -> Element:
         """S(K) = (e0 + (-1)^N e1) . K."""
         combo = self.e0 + Fraction((-1) ** self.N) * self.e1
-        return self.mul(combo, self._K(1))
+        return combo * self._K(1)
 
     def _antipode_K_power(self, k: int) -> Element:
         cached = self._antipode_K_power_cache.get(k)
         if cached is not None:
             return cached
-        result = self.unit() if k == 0 else self.mul(self._antipode_K1(), self._antipode_K_power(k - 1))
+        result = self.unit() if k == 0 else self._antipode_K1() * self._antipode_K_power(k - 1)
         self._antipode_K_power_cache[k] = result
         return result
 
@@ -383,7 +388,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
             return cached
         sign = 1 if pos % 2 == 0 else -1
         combo = self.e0 + (sign * ((-1) ** self.N) * self.i()) * self.e1
-        result = self.mul(self.mul(self._f(pos), combo), self._K(1))
+        result = self._f(pos) * combo * self._K(1)
         self._antipode_f_cache[pos] = result
         return result
 
@@ -403,7 +408,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         result = self._antipode_K_power(k)
         for pos in reversed(range(len(bits))):
             if bits[pos]:
-                result = self.mul(result, self._antipode_f(pos))
+                result = result * self._antipode_f(pos)
         self._antipode_basis_cache[key] = result
         return result
 
@@ -413,10 +418,10 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         leg of Phi (i_sign=+1) / Phi^-1 (i_sign=-1)."""
         one = self.unit()
         KN = self._K(self.N)
-        term_a = self.mul(KN - one, self.e0)
+        term_a = (KN - one) * self.e0
         scalar = self.beta_scalar() ** 2 * (i_sign * self.i()) ** self.N
         bracket_b = scalar * KN - one
-        term_b = self.mul(bracket_b, self.e1)
+        term_b = bracket_b * self.e1
         return term_a + term_b
 
     def associator(self) -> Element:
@@ -437,7 +442,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
     def beta(self) -> Element:
         """Sbeta = e0 + beta^2 (iK)^N e1."""
         scalar = self.beta_scalar() ** 2 * self.i() ** self.N
-        return self.e0 + self.mul(scalar * self._K(self.N), self.e1)
+        return self.e0 + (scalar * self._K(self.N)) * self.e1
 
     # -- R-matrix, monodromy, Drinfeld and ribbon elements -----------------
     def _cartan_factor(self, n: int, m: int) -> Element:
@@ -455,7 +460,11 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
 
     def _r_matrix_cartan_sum(self, beta_sign: int) -> Element:
         """sum_{n,m in {0,1}} beta^{beta_sign*n*m} * rho_{n,m} * e_n (x) e_m
-        -- the first factor of R (beta_sign=+1)."""
+        -- the first factor of R (beta_sign=+1). ``*`` here is the
+        algebra product in H (x) H (both operands are arity-2 tensor
+        elements -- e0/e1 are tagged, so `*` picks that up via its
+        wildcard rule even though ``piece`` itself isn't; see
+        ``Element.__mul__``)."""
         beta = self.beta_scalar()
         idem = (self.e0, self.e1)
         result = Element()
@@ -463,7 +472,7 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
             for m in (0, 1):
                 scalar = beta ** (beta_sign * n * m)
                 piece = scalar * self._cartan_factor(n, m)
-                result = result + tensor_mul(self, piece, tensor(idem[n], idem[m]))
+                result = result + piece * tensor(idem[n], idem[m])
         return result
 
     def r_matrix(self) -> Element:
@@ -476,6 +485,16 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         Q(zeta_8) -- no field extension needed (contrast
         ``QuantumSl2Quasi.r_matrix()``), since both i and beta already
         live there.
+
+        Written with tagged elements and ``*`` (never ``tensor_mul``/
+        ``self.mul`` spelled out) for both the H-level product
+        (``self.f(k, "-") * omega_minus``) and the H(x)H-level one
+        (``product * local``, ``... * product``) -- ``*``'s arity-aware
+        dispatch (see ``Element.__mul__``) already picks the right one;
+        ``tensor(a, b)`` stays the one, explicit way to write an actual
+        tensor product. ``self.f(k, "+")``/``self.f(k, "-")`` (already
+        tagged) replace the equivalent, more roundabout
+        ``self._f(2*(k-1))``/``self._f(2*(k-1)+1)``.
         """
         if self._r_matrix_cache is not None:
             return self._r_matrix_cache
@@ -484,13 +503,38 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         omega_minus = self._omega(-1)
         product = tensor(one, one)
         for k in range(1, self.N + 1):
-            pos_plus, pos_minus = 2 * (k - 1), 2 * (k - 1) + 1
-            fk_plus, fk_minus = self._f(pos_plus), self._f(pos_minus)
-            local = tensor(one, one) - 2 * tensor(self.mul(fk_minus, omega_minus), fk_plus)
-            product = tensor_mul(self, product, local)
+            local = tensor(one, one) - 2 * tensor(self.f(k, "-") * omega_minus, self.f(k, "+"))
+            product = product * local
 
-        result = tensor_mul(self, self._r_matrix_cartan_sum(+1), product)
+        result = self._r_matrix_cartan_sum(+1) * product
         self._r_matrix_cache = result
+        return result
+
+    def r_matrix_inv(self) -> Element:
+        r"""The inverse of the universal R-matrix, an element of H (x) H:
+
+            R^-1 = prod_{k=1}^N (1(x)1 + 2 f_k^- omega_- (x) f_k^+) .
+                   (sum_{n,m in {0,1}} beta^{-nm} rho_{n,m} e_n (x) e_m)
+
+        Ported from eq:R+Riv in the paper (Section 3.1) -- same
+        construction as ``r_matrix()``, but with the product and Cartan
+        sum in the opposite order, ``+2`` instead of ``-2`` in the local
+        factor, and ``beta^{-nm}`` instead of ``beta^{nm}`` in the
+        Cartan sum (``_r_matrix_cartan_sum(-1)``). Checked against
+        ``r_matrix()`` by ``axioms.check_r_matrix_inverse``.
+        """
+        if self._r_matrix_inv_cache is not None:
+            return self._r_matrix_inv_cache
+
+        one = self.unit()
+        omega_minus = self._omega(-1)
+        product = tensor(one, one)
+        for k in range(1, self.N + 1):
+            local = tensor(one, one) + 2 * tensor(self.f(k, "-") * omega_minus, self.f(k, "+"))
+            product = product * local
+
+        result = product * self._r_matrix_cartan_sum(-1)
+        self._r_matrix_inv_cache = result
         return result
 
     # monodromy()/drinfeld() are generic (see QuasiHopfAlgebra) -- not
@@ -501,24 +545,54 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
 
             v = (e0 - beta*i*K*e1) . prod_{k=1}^N (1 - 2 f_k^+ f_k^-)
 
-        Ported from eq:ribbon+ribinv in the paper (Section 3.1).
+        Ported from eq:ribbon+ribinv in the paper (Section 3.1). Written
+        with tagged elements and ``*`` (see ``r_matrix()``'s docstring
+        for why -- same idea, ``*`` for every algebra product, no
+        ``tensor()``/tensor product needed here since this is a
+        single-leg element; also uses ``self.f(k, "+")``/``self.f(k, "-")``
+        instead of the more roundabout ``self._f(2*(k-1))``/
+        ``self._f(2*(k-1)+1)``).
         """
         if self._ribbon_cache is not None:
             return self._ribbon_cache
 
         beta = self.beta_scalar()
-        K_e1 = self.mul(self._K(1), self.e1)
+        K_e1 = self._K(1) * self.e1
         prefactor = self.e0 - (beta * self.i()) * K_e1
 
         product = self.unit()
         for k in range(1, self.N + 1):
-            pos_plus, pos_minus = 2 * (k - 1), 2 * (k - 1) + 1
-            fk_plus, fk_minus = self._f(pos_plus), self._f(pos_minus)
-            local = self.unit() - 2 * self.mul(fk_plus, fk_minus)
-            product = self.mul(product, local)
+            local = self.unit() - 2 * (self.f(k, "+") * self.f(k, "-"))
+            product = product * local
 
-        result = self.mul(prefactor, product)
+        result = prefactor * product
         self._ribbon_cache = result
+        return result
+
+    def ribbon_inv(self) -> Element:
+        r"""The inverse of the ribbon element, an element of H:
+
+            v^-1 = (e0 - beta^-1*i*K*e1) . prod_{k=1}^N (1 + 2 f_k^+ f_k^- K^2)
+
+        Ported from eq:ribbon+ribinv in the paper (Section 3.1) -- same
+        construction as ``ribbon()``, but with ``beta^-1`` instead of
+        ``beta`` and an extra ``K^2`` factor in the product. Checked
+        against ``ribbon()`` by ``axioms.check_ribbon_inverse``.
+        """
+        if self._ribbon_inv_cache is not None:
+            return self._ribbon_inv_cache
+
+        beta = self.beta_scalar()
+        K_e1 = self._K(1) * self.e1
+        prefactor = self.e0 - (beta ** (-1) * self.i()) * K_e1
+
+        product = self.unit()
+        for k in range(1, self.N + 1):
+            local = self.unit() + 2 * (self.f(k, "+") * self.f(k, "-") * self.K**2)
+            product = product * local
+
+        result = prefactor * product
+        self._ribbon_inv_cache = result
         return result
 
     # f_element() is generic (see QuasiHopfAlgebra) -- not overridden here.

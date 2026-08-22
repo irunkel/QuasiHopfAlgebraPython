@@ -37,7 +37,7 @@ def _find_src_dir() -> Path:
 sys.path.insert(0, str(_find_src_dir()))
 
 from hopfsym import axioms
-from hopfsym.element import Element, Δ, ε
+from hopfsym.element import Element, tensor, Δ, ε
 from hopfsym.examples import RestrictedSl2
 
 alg = RestrictedSl2(p=3)

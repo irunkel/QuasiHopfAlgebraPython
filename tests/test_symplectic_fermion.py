@@ -170,21 +170,27 @@ class BraidingTests(unittest.TestCase):
     """R-matrix, monodromy, Drinfeld and ribbon elements, verified
     against the same generic axioms as QuantumSl2Quasi's/RestrictedSl2's
     quasi-triangular structure (check_r_matrix_intertwiner, check_hexagon,
-    check_ribbon, check_s_delta_compatibility) -- the R-matrix/ribbon
-    element themselves have no independent closed-form cross-check
-    available for this algebra (unlike QuantumSl2Quasi's/RestrictedSl2's),
-    so this is the only verification for those two specifically. (See
-    SpecialElementTests below for drinfeld()/f_element(), which do have
-    one.)"""
+    check_ribbon, check_s_delta_compatibility). r_matrix()/ribbon()
+    additionally get checked against r_matrix_inv()/ribbon_inv()
+    (check_r_matrix_inverse/check_ribbon_inverse) -- both ported from the
+    paper's own eq:R+Riv/eq:ribbon+ribinv, which give the inverse
+    directly, so this is a real (if not fully independent) cross-check,
+    not just internal self-consistency. (See SpecialElementTests below
+    for drinfeld()/f_element(), which have a fully independent
+    closed-form cross-check.)"""
 
     def _check(self, N, beta_power):
         alg = SymplecticFermionQ(N=N, beta_power=beta_power)
         with self.subTest(N=N, beta_power=beta_power, check="r_matrix_intertwiner"):
             self.assertTrue(axioms.check_r_matrix_intertwiner(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="r_matrix_inverse"):
+            self.assertTrue(axioms.check_r_matrix_inverse(alg, verbose=True))
         with self.subTest(N=N, beta_power=beta_power, check="hexagon"):
             self.assertTrue(axioms.check_hexagon(alg, verbose=True))
         with self.subTest(N=N, beta_power=beta_power, check="ribbon"):
             self.assertTrue(axioms.check_ribbon(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="ribbon_inverse"):
+            self.assertTrue(axioms.check_ribbon_inverse(alg, verbose=True))
         with self.subTest(N=N, beta_power=beta_power, check="s_delta_compatibility"):
             self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
 
