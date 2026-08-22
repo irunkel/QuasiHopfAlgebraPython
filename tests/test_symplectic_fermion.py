@@ -28,7 +28,11 @@ from hopfsym.element import Element, tensor, tensor_mul, apply_to_factor
 from hopfsym.examples import SymplecticFermionQ
 
 from _random_model import random_N, valid_beta_powers
-from _special_elements import symplectic_fermion_expected_drinfeld, symplectic_fermion_expected_f_element
+from _special_elements import (
+    symplectic_fermion_expected_drinfeld,
+    symplectic_fermion_expected_f_element,
+    symplectic_fermion_expected_f_element_inv,
+)
 
 
 class BasicRelationsTests(unittest.TestCase):
@@ -193,6 +197,8 @@ class BraidingTests(unittest.TestCase):
             self.assertTrue(axioms.check_ribbon_inverse(alg, verbose=True))
         with self.subTest(N=N, beta_power=beta_power, check="s_delta_compatibility"):
             self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
+        with self.subTest(N=N, beta_power=beta_power, check="gamma_definition"):
+            self.assertTrue(axioms.check_gamma_definition(alg, verbose=True))
 
     def test_axioms_N1_exhaustive_beta(self):
         # dimension 2^4=16, cheap -- every valid beta_power for N=1.
@@ -214,13 +220,16 @@ class BraidingTests(unittest.TestCase):
 
 
 class SpecialElementTests(unittest.TestCase):
-    """Independent closed forms from the paper's "Some special elements
-    of Q" section (Section 3.2, right after Factorisability), checked
-    against the generic drinfeld()/f_element() (see
+    """Independent closed forms checked against the generic
+    drinfeld()/f_element()/f_element_inv() (see
     hopfsym.algebra.QuasiHopfAlgebra) -- unlike the R-matrix/ribbon
-    element (BraidingTests above), the paper gives something concrete to
-    cross-check these two against for this specific algebra, not just
-    the generic axioms."""
+    element (BraidingTests above), something concrete exists to
+    cross-check these three against for this specific algebra, not just
+    the generic axioms. drinfeld()/f_element() come from the paper's
+    "Some special elements of Q" section (Section 3.2, right after
+    Factorisability); f_element_inv()'s closed form is not itself from
+    the paper (see symplectic_fermion_expected_f_element_inv's
+    docstring in tests/_special_elements.py)."""
 
     CASES = [(1, 1), (2, 0), (2, 2), (3, 1)]
 
@@ -233,6 +242,18 @@ class SpecialElementTests(unittest.TestCase):
             with self.subTest(N=N, beta_power=bp):
                 self.assertEqual(alg.f_element(), symplectic_fermion_expected_f_element(alg))
 
+    def test_f_element_inv_matches_explicit_formula(self):
+        # An elementary block-by-block inversion of eq:def:F-Q, not
+        # itself a paper formula (see tests/_special_elements.py's
+        # symplectic_fermion_expected_f_element_inv) -- was this
+        # algebra's own f_element_inv() override before the generic
+        # QuasiHopfAlgebra.f_element_inv() (Drinfeld's eq (1.36)) existed:
+        #   F^-1 = e0 (x) 1 + e1 (x) (K^-N.e0) + (beta^-2(-iK)^-N.e1) (x) e1
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                self.assertEqual(alg.f_element_inv(), symplectic_fermion_expected_f_element_inv(alg))
+
     def test_drinfeld_matches_explicit_formula(self):
         # eq:sqs+sqsinvbr-Q (see tests/_special_elements.py):
         #   u = (e0.K + e1.beta.(-iK)^N) . prod_{i=1}^N (1 - 2 f_i^+ f_i^-)
@@ -240,6 +261,127 @@ class SpecialElementTests(unittest.TestCase):
             alg = SymplecticFermionQ(N=N, beta_power=bp)
             with self.subTest(N=N, beta_power=bp):
                 self.assertEqual(alg.drinfeld(), symplectic_fermion_expected_drinfeld(alg))
+
+
+class IntegralTests(unittest.TestCase):
+    """left_integral()/right_integral() (eq:int-Q in the paper, Section
+    3.5 -- a two-sided integral, so both return the same element),
+    checked against their defining properties via
+    axioms.check_left_integral/check_right_integral. Unlike
+    drinfeld()/f_element() in SpecialElementTests above, integrals
+    aren't part of QuasiHopfAlgebra's "provably generic" trio -- there
+    is no separate generic computation to cross-check against, so this
+    *is* the formula, checked directly (exhaustively over the whole
+    basis, cheap enough -- see check_left_integral's docstring)."""
+
+    def test_left_integral(self):
+        for N in (1, 2, 3):
+            for bp in valid_beta_powers(N):
+                alg = SymplecticFermionQ(N=N, beta_power=bp)
+                with self.subTest(N=N, beta_power=bp):
+                    self.assertTrue(axioms.check_left_integral(alg, verbose=True))
+
+    def test_right_integral(self):
+        for N in (1, 2, 3):
+            for bp in valid_beta_powers(N):
+                alg = SymplecticFermionQ(N=N, beta_power=bp)
+                with self.subTest(N=N, beta_power=bp):
+                    self.assertTrue(axioms.check_right_integral(alg, verbose=True))
+
+    def test_right_integral_equals_left_integral(self):
+        # Q's integral is two-sided (eq:int-Q) -- right_integral() isn't
+        # independently derived, it's the same element by construction,
+        # but worth pinning down as a regression check anyway.
+        for N in (1, 2, 3):
+            for bp in valid_beta_powers(N):
+                alg = SymplecticFermionQ(N=N, beta_power=bp)
+                with self.subTest(N=N, beta_power=bp):
+                    self.assertEqual(alg.right_integral(), alg.left_integral())
+
+
+def _derive_modulus(alg, elem):
+    """Generic derivation of the modulus from ``left_integral()``
+    (test-only cross-check against the explicit ``modulus()`` -- not
+    production code, see ``algebra.py``'s ``modulus()`` docstring for
+    why it's given explicitly there instead): mu(h) is the scalar with
+    Lambda.h == mu(h).Lambda, read off at one reference term of Lambda
+    where its own coefficient is nonzero -- and checked for genuine
+    proportionality (not just agreement at that one term) along the
+    way, since that's exactly what makes mu well-defined in the first
+    place (one-dimensionality of the space of left integrals)."""
+    Lambda = alg.left_integral()
+    ref_key, ref_coeff = next(iter(Lambda.terms.items()))
+    total = 0
+    for key, coeff in elem.terms.items():
+        Lambda_h = alg.mul(Lambda, Element.basis(key))
+        mu_k = Lambda_h.terms.get(ref_key, 0) / ref_coeff
+        assert Lambda_h == mu_k * Lambda, f"Lambda.{key} is not a scalar multiple of Lambda"
+        total = total + coeff * mu_k
+    return total
+
+
+class CointegralTests(unittest.TestCase):
+    """left_cointegral()/right_cointegral() (arXiv:1812.10445 eq (5.24)-
+    (5.25), ported from the paper's own basis convention with a sign
+    correction resolved empirically -- see left_cointegral()'s
+    docstring), checked against Definition 3.5 via
+    axioms.check_left_cointegral/check_right_cointegral (which need
+    U()/V()/Ucop()/Vcop(), and so antipode_inv() (per-algebra) and
+    f_element_inv() (generic, see algebra.py) -- verified directly as
+    genuine inverses below. modulus() (= counit, Q being
+    unimodular) is cross-checked against a generic derivation from
+    left_integral() (see _derive_modulus above) instead of a check in
+    axioms.py, per the project's preference for that particular piece."""
+
+    CASES = [(1, 1), (2, 0), (2, 2), (3, 1)]
+
+    def test_left_cointegral(self):
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                self.assertTrue(axioms.check_left_cointegral(alg, verbose=True))
+
+    def test_right_cointegral(self):
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                self.assertTrue(axioms.check_right_cointegral(alg, verbose=True))
+
+    def test_right_cointegral_equals_left_cointegral(self):
+        # Q's cointegral is two-sided (pivot has order 2) -- pinned down
+        # as a regression check, same reasoning as IntegralTests above.
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                for b in alg.basis():
+                    eb = alg.elt(b)
+                    self.assertEqual(alg.left_cointegral(eb), alg.right_cointegral(eb))
+
+    def test_modulus_matches_generic_derivation(self):
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                for b in alg.basis():
+                    eb = alg.elt(b)
+                    self.assertEqual(alg.modulus(eb), _derive_modulus(alg, eb))
+
+    def test_antipode_inv_is_genuine_inverse(self):
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                for b in alg.basis():
+                    eb = Element.basis(b)
+                    self.assertEqual(alg.antipode(alg.antipode_inv(eb)), eb)
+                    self.assertEqual(alg.antipode_inv(alg.antipode(eb)), eb)
+
+    def test_f_element_inv_is_genuine_inverse(self):
+        for N, bp in self.CASES:
+            alg = SymplecticFermionQ(N=N, beta_power=bp)
+            with self.subTest(N=N, beta_power=bp):
+                one_one = tensor(alg.unit(), alg.unit())
+                F, Finv = alg.f_element(), alg.f_element_inv()
+                self.assertEqual(tensor_mul(alg, F, Finv), one_one)
+                self.assertEqual(tensor_mul(alg, Finv, F), one_one)
 
 
 class GeneratorAccessorTests(unittest.TestCase):

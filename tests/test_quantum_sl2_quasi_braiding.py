@@ -193,6 +193,11 @@ class FElementTests(unittest.TestCase):
         with self.subTest(p=p, t=t):
             alg = QuantumSl2Quasi(p=p, t=t)
             self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
+            # gamma() (Drinfeld's paper, eq (1.24)) is provably generic
+            # too -- see algebra.py -- so this (eq (1.35)) applies here
+            # as well, not just to the quasi-triangular/ribbon checks
+            # above.
+            self.assertTrue(axioms.check_gamma_definition(alg, verbose=True))
 
     def test_random_1(self):
         self._check(*random_p_t())

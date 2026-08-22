@@ -15,12 +15,22 @@ and ``check_antipode`` reduces to the usual antipode axiom -- so nothing
 here is specific to the quasi-Hopf case, it is simply general enough to
 cover it.
 
-``check_r_matrix_intertwiner``, ``check_hexagon``, ``check_ribbon`` and
-``check_s_delta_compatibility`` need the *optional* part of the
-interface (``r_matrix``/``ribbon``/``drinfeld``/``f_element`` -- see
-``algebra.py``), for algebras that are additionally quasi-triangular or
-ribbon. They are not part of ``check_all`` since most algebras won't
-implement that optional structure; call them separately when they do.
+``check_r_matrix_intertwiner``, ``check_hexagon`` and ``check_ribbon``
+need the *optional* part of the interface (``r_matrix``/``ribbon`` --
+see ``algebra.py``), for algebras that are additionally quasi-triangular
+or ribbon. ``check_s_delta_compatibility`` and ``check_gamma_definition``
+revolve around ``f_element()``/``gamma()`` (Drinfeld's paper), which --
+unlike ``r_matrix``/``ribbon`` -- are provably generic and need nothing
+beyond the *required* interface, so they work for every algebra; grouped
+here with the optional-structure checks anyway, for the same "call
+separately" treatment. None of these four are part of ``check_all``.
+
+(An earlier ``check_f_element_conjugation``, Drinfeld's eq (1.34)
+``F.Delta(S(a)).F^-1 == (S (x) S)(Delta'(a))``, was removed: it's the
+algebraic consequence of ``check_s_delta_compatibility``'s
+``(S (x) S)(Delta'(a)).F == F.Delta(S(a))`` right-multiplied by F^-1,
+so once both that and F.F^-1 == 1 (x) 1 are checked elsewhere, it adds
+no independent information.)
 
 By default, checks that take a single basis element (counit, twisted
 coassociativity, antipode) test a random sample rather than the whole
@@ -486,6 +496,40 @@ def check_evaluation_coevaluation(alg, verbose=True) -> bool:
     return True
 
 
+def check_alpha_beta_normalization(alg, verbose=True) -> bool:
+    r"""The normalisation convention eps(alpha) == 1 == eps(beta).
+
+    This is *not* forced by the quasi-Hopf axioms alone: applying eps to
+    the evaluation identity (``check_evaluation_coevaluation``'s
+    ``sum S(a).alpha.b.beta.S(c) == 1``), using eps o S == eps and
+    (eps (x) eps (x) eps)(Phi) == 1, only gives the weaker
+    eps(alpha)*eps(beta) == 1. Fixing each factor to 1 individually is
+    an extra (always achievable, e.g. via S -> U.S.U^-1,
+    alpha -> U.alpha, beta -> beta.U^-1 for a suitable invertible U)
+    gauge choice, not a consequence of the axioms by themselves.
+
+    It matters because some formulas rely on it directly rather than
+    stating it as a hypothesis -- e.g. the symplectic-fermion paper
+    (arXiv:1706.08164) notes, right after eq:qHopf-coend-dualstructuremaps,
+    "for the calculation of u we used eps(Sbeta)=1" (u = the Drinfeld
+    element). Every algebra in this package satisfies it with the alpha/
+    beta given in its own source (RestrictedSl2/QuantumSl2Quasi: alpha=1
+    trivially, and beta = e0 + (scalar).e1 has eps(beta) = eps(e0) = 1
+    since eps(K) = 1; SymplecticFermionQ: same shape, alpha=1 and
+    eps(beta) = eps(e0) = 1) -- worth checking directly rather than
+    assuming it silently continues to hold after any change to alpha()/
+    beta()/counit().
+    """
+    alpha, beta = alg.alpha(), alg.beta()
+    eps_alpha, eps_beta = alg.counit(alpha), alg.counit(beta)
+    if eps_alpha != 1 or eps_beta != 1:
+        if verbose:
+            print("alpha/beta normalisation failed")
+            print(f"  eps(alpha) = {eps_alpha},  eps(beta) = {eps_beta}  (expected 1, 1)")
+        return False
+    return True
+
+
 def check_ribbon(alg, verbose=True) -> bool:
     r"""Properties defining a ribbon element v = ``alg.ribbon()``, given a
     quasi-triangular structure R = ``alg.r_matrix()`` and Drinfeld
@@ -557,6 +601,187 @@ def check_ribbon_inverse(alg, verbose=True) -> bool:
     return True
 
 
+def check_left_integral(alg, samples=None, verbose=True) -> bool:
+    r"""h . Lambda == eps(h) . Lambda for every h in H, where
+    Lambda = ``alg.left_integral()`` (optional in the interface --
+    unlike e.g. the antipode axiom, a two-sided or one-sided integral
+    need not exist at all for a general quasi-Hopf algebra, though it
+    always does for the finite-dimensional case this package covers,
+    see arXiv:1812.10445's "Integrals and cointegrals" section).
+
+    Also checks Lambda != 0: the condition holds vacuously for Lambda =
+    0, which would silently pass otherwise -- an integral is required to
+    be a nonzero element of the (always one-dimensional, when it exists)
+    space of such elements.
+
+    Unlike the other checks here, this defaults to the *entire* basis
+    rather than a random sample of ``SAMPLE_SIZE``: the condition is
+    linear in h (no coproduct expansion, one multiplication per basis
+    element), so exhaustive checking is cheap and, since it's linear,
+    strictly stronger than any sample -- pass ``samples=`` explicitly to
+    override if this becomes a bottleneck for some algebra.
+    """
+    if samples is None:
+        samples = alg.basis()
+    Lambda = alg.tag(alg.left_integral())
+    if Lambda.is_zero():
+        if verbose:
+            print("left integral check failed: Lambda = 0")
+        return False
+    for a in samples:
+        ea = alg.elt(a)
+        eps_a = ε(ea)
+        lhs = ea * Lambda
+        rhs = eps_a * Lambda
+        if lhs != rhs:
+            if verbose:
+                print(f"left integral axiom failed for a={a}")
+                print(f"  a . Lambda       = {lhs}")
+                print(f"  eps(a) . Lambda  = {rhs}")
+            return False
+    return True
+
+
+def check_right_integral(alg, samples=None, verbose=True) -> bool:
+    r"""Lambda . h == eps(h) . Lambda for every h in H, where
+    Lambda = ``alg.right_integral()`` (optional in the interface).
+
+    A right integral for H is, by definition, a left integral for
+    H^op -- rather than actually implementing H^op as a separate
+    algebra, this just multiplies the other way round
+    (``Lambda * ea`` instead of ``check_left_integral``'s
+    ``ea * Lambda``), which is all that definition amounts to here.
+
+    Otherwise identical to ``check_left_integral``: also checks
+    Lambda != 0 (vacuous pass otherwise), and defaults to the entire
+    basis rather than a random sample, for the same reason (linear in
+    h, cheap, exhaustive is strictly stronger than any sample).
+    """
+    if samples is None:
+        samples = alg.basis()
+    Lambda = alg.tag(alg.right_integral())
+    if Lambda.is_zero():
+        if verbose:
+            print("right integral check failed: Lambda = 0")
+        return False
+    for a in samples:
+        ea = alg.elt(a)
+        eps_a = ε(ea)
+        lhs = Lambda * ea
+        rhs = eps_a * Lambda
+        if lhs != rhs:
+            if verbose:
+                print(f"right integral axiom failed for a={a}")
+                print(f"  Lambda . a       = {lhs}")
+                print(f"  eps(a) . Lambda  = {rhs}")
+            return False
+    return True
+
+
+def check_left_cointegral(alg, samples=None, verbose=True) -> bool:
+    r"""Definition 3.5 in arXiv:1812.10445 (paraphrasing Bulacu-Caenepeel)
+    for a left cointegral lambda = ``alg.left_cointegral``:
+
+        (id (x) lambda)(V . Delta(h) . U)
+            == gamma(Phi_1) . lambda(h . S(Phi_2)) . Phi_3
+
+    for every h in H, where V = ``alg.V()``, U = ``alg.U()`` (see
+    ``algebra.py``) and gamma = ``alg.modulus``. Requires
+    ``left_cointegral()``, ``modulus()``, ``U()`` and ``V()`` (all
+    optional -- the latter two additionally need ``antipode_inv()``/
+    ``f_element_inv()``, so this raises ``NotImplementedError`` if any
+    of that chain is missing).
+
+    Also checks that ``left_cointegral`` isn't identically zero on the
+    basis (a vacuous pass otherwise, same reasoning as
+    ``check_left_integral``'s Lambda != 0 check).
+
+    Unlike ``check_left_integral``, this is *not* linear in h alone (V .
+    Delta(h) . U genuinely expands the coproduct and multiplies out two
+    H (x) H elements), so -- like ``check_r_matrix_intertwiner`` --
+    defaults to a random sample of ``SAMPLE_SIZE`` rather than the whole
+    basis.
+    """
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
+    if all(alg.left_cointegral(alg.elt(b)) == 0 for b in alg.basis()):
+        if verbose:
+            print("left cointegral check failed: lambda is identically zero")
+        return False
+    V = alg.tag(alg.V())
+    U = alg.tag(alg.U())
+    Phi = alg.associator()
+    for h in samples:
+        eh = alg.elt(h)
+        VDU = V * Δ(eh) * U
+        lhs = Element()
+        for key, c in VDU.terms.items():
+            k1, k2 = _pair(key)
+            lhs = lhs + (c * alg.left_cointegral(alg.elt(k2))) * alg.elt(k1)
+        rhs = Element()
+        for key, c in Phi.terms.items():
+            a1, a2, a3 = _triple(key)
+            inner = alg.mul(eh, alg.antipode(alg.elt(a2)))
+            scalar = alg.modulus(alg.elt(a1)) * alg.left_cointegral(inner)
+            rhs = rhs + (c * scalar) * alg.elt(a3)
+        if lhs != rhs:
+            if verbose:
+                print(f"left cointegral axiom failed for h={h}")
+                print(f"  (id x lambda)(V.Delta(h).U)           = {lhs}")
+                print(f"  gamma(Phi_1).lambda(h.S(Phi_2)).Phi_3  = {rhs}")
+            _report_seed(seed)
+            return False
+    return True
+
+
+def check_right_cointegral(alg, samples=None, verbose=True) -> bool:
+    r"""Definition 3.5 in arXiv:1812.10445 for a right cointegral
+    lambda = ``alg.right_cointegral``:
+
+        (id (x) lambda)(Vcop . Deltacop(h) . Ucop)
+            == gamma(Psi_3) . lambda(h . S^-1(Psi_2)) . Psi_1
+
+    for every h in H, where Vcop = ``alg.Vcop()``, Ucop = ``alg.Ucop()``,
+    Deltacop(h) = flip(Delta(h)), and Psi = ``alg.associator_inv()``
+    (Phi^-1). Otherwise identical in structure and requirements to
+    ``check_left_cointegral`` (including the nonzero check and the
+    random-sample default) -- see its docstring.
+    """
+    seed = None
+    if samples is None:
+        samples, seed = _sample_single(alg)
+    if all(alg.right_cointegral(alg.elt(b)) == 0 for b in alg.basis()):
+        if verbose:
+            print("right cointegral check failed: lambda is identically zero")
+        return False
+    Vcop = alg.tag(alg.Vcop())
+    Ucop = alg.tag(alg.Ucop())
+    Psi = alg.associator_inv()
+    for h in samples:
+        eh = alg.elt(h)
+        Dcop_h = flip(Δ(eh))
+        VDU = Vcop * Dcop_h * Ucop
+        lhs = Element()
+        for key, c in VDU.terms.items():
+            k1, k2 = _pair(key)
+            lhs = lhs + (c * alg.right_cointegral(alg.elt(k2))) * alg.elt(k1)
+        rhs = Element()
+        for key, c in Psi.terms.items():
+            p1, p2, p3 = _triple(key)
+            inner = alg.mul(eh, alg.antipode_inv(alg.elt(p2)))
+            scalar = alg.modulus(alg.elt(p3)) * alg.right_cointegral(inner)
+            rhs = rhs + (c * scalar) * alg.elt(p1)
+        if lhs != rhs:
+            if verbose:
+                print(f"right cointegral axiom failed for h={h}")
+                print(f"  (id x lambda)(Vcop.Deltacop(h).Ucop)      = {lhs}")
+                print(f"  gamma(Psi_3).lambda(h.S^-1(Psi_2)).Psi_1  = {rhs}")
+            _report_seed(seed)
+            return False
+    return True
+
+
 def check_s_delta_compatibility(alg, samples=None, verbose=True) -> bool:
     r"""Compatibility of the coproduct and antipode via the element
     F = ``alg.f_element()`` (Drinfeld's paper; mirrors ``testSDeltaR`` in
@@ -602,6 +827,27 @@ def check_s_delta_compatibility(alg, samples=None, verbose=True) -> bool:
     return True
 
 
+def check_gamma_definition(alg, verbose=True) -> bool:
+    r"""gamma() == F . Delta(alpha) (Drinfeld's paper, eq (1.35)), where
+    F = ``alg.f_element()`` and gamma = ``alg.gamma()`` (both provided
+    for free, see ``algebra.py``). ``gamma()`` is built independently of
+    F, purely from Phi, Phi^-1, S and alpha (eq (1.24), the intermediate
+    used to build ``f_element()``/``f_element_inv()`` themselves), so
+    this is a genuine cross-check of that construction, not circular.
+    """
+    F = alg.tag(alg.f_element())
+    alpha = alg.tag(alg.alpha())
+    lhs = alg.tag(alg.gamma())
+    rhs = F * Δ(alpha)
+    if lhs != rhs:
+        if verbose:
+            print("gamma definition failed (Drinfeld eq 1.35)")
+            print(f"  gamma()          = {lhs}")
+            print(f"  F . Delta(alpha) = {rhs}")
+        return False
+    return True
+
+
 def check_all(alg, verbose=True) -> bool:
     """Run every check above; returns True iff all of them pass."""
     checks = [
@@ -612,6 +858,7 @@ def check_all(alg, verbose=True) -> bool:
         ("pentagon", lambda: check_pentagon(alg, verbose=verbose)),
         ("antipode", lambda: check_antipode(alg, verbose=verbose)),
         ("evaluation/coevaluation", lambda: check_evaluation_coevaluation(alg, verbose=verbose)),
+        ("alpha/beta normalization", lambda: check_alpha_beta_normalization(alg, verbose=verbose)),
     ]
     ok = True
     for name, fn in checks:

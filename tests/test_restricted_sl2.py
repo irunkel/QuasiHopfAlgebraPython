@@ -191,6 +191,7 @@ class BraidingTests(unittest.TestCase):
         self.assertTrue(axioms.check_hexagon(alg, verbose=True))
         self.assertTrue(axioms.check_ribbon(alg, verbose=True))
         self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
+        self.assertTrue(axioms.check_gamma_definition(alg, verbose=True))
 
     def test_axioms_p3(self):
         alg = RestrictedSl2(p=3)
@@ -198,6 +199,7 @@ class BraidingTests(unittest.TestCase):
         self.assertTrue(axioms.check_hexagon(alg, verbose=True))
         self.assertTrue(axioms.check_ribbon(alg, verbose=True))
         self.assertTrue(axioms.check_s_delta_compatibility(alg, verbose=True))
+        self.assertTrue(axioms.check_gamma_definition(alg, verbose=True))
 
     def test_drinfeld_matches_classical_hopf_formula(self):
         # Phi is trivial here (honest Hopf algebra), so the general

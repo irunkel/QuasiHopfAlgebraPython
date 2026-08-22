@@ -72,6 +72,39 @@ closed forms for both, used as regression tests against these generic
 implementations in tests/test_symplectic_fermion.py rather than
 reimplemented here.
 
+## Integral
+
+``left_integral()`` is ported from eq:int-Q (Section 3.5), a two-sided
+integral -- ``right_integral()`` just returns the same element -- checked
+against its defining property by ``axioms.check_left_integral``/
+``axioms.check_right_integral`` (the latter defined by multiplying the
+other way round, not via a separate H^op algebra). This formula also
+comes from a source outside the "R-matrix and ribbon element" section
+above (arXiv:1812.10445, "Integrals and cointegrals"), which additionally
+cites this same formula (Section "Example: symplectic fermion quasi-Hopf
+algebra") and confirms that Q is unimodular.
+
+## Cointegral
+
+``modulus()`` is just the counit (Q being unimodular, see above).
+``antipode_inv()`` (S^-1, from arXiv:1812.10445, stated right after its
+eq (3.35)) and ``f_element_inv()`` (F^-1, obtained here by directly
+inverting eq:def:F-Q's already-sourced formula block-by-block -- see its
+own docstring) feed into ``QuasiHopfAlgebra``'s generic ``qR()``/
+``pR()``/``qL()``/``pL()``/``U()``/``V()``/``Ucop()``/``Vcop()``, which
+in turn are what ``left_cointegral()``/``right_cointegral()`` (ported
+from eq (5.24)-(5.25) in the same paper's Section 5, also two-sided
+here) get checked against by ``axioms.check_left_cointegral``/
+``axioms.check_right_cointegral`` (Definition 3.5, paraphrasing
+Bulacu-Caenepeel). The paper's own basis convention for its cointegral
+formula (all +'s before all -'s) differs from this module's normal-form
+ordering (interleaved, see "Generators and relations" above) by an
+overall sign, (-1)^(N(N-1)/2) -- resolved empirically (not just derived
+by hand) against ``check_left_cointegral``, see ``left_cointegral()``'s
+docstring. This whole chain caught a real bug during development
+(``f_element_inv()``'s formula) via ``check_left_cointegral`` genuinely
+failing until it was fixed -- not a case of a vacuously-satisfied check.
+
 ## Verification strategy (no Mathematica reference exists)
 
 Remark right after eq:Q-antipode-def in the paper gives two independent,
@@ -137,11 +170,14 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._antipode_f_cache = {}
         self._antipode_K_power_cache = {}
         self._antipode_basis_cache = {}
+        self._antipode_inv_f_cache = {}
+        self._antipode_inv_basis_cache = {}
         self._comul_basis_cache = {}
         self._r_matrix_cache = None
         self._r_matrix_inv_cache = None
         self._ribbon_cache = None
         self._ribbon_inv_cache = None
+        self._left_integral_cache = None
 
         # e0 = (1+K^2)/2, e1 = (1-K^2)/2: central idempotents, used all
         # over the structure maps below -- computed once here (tagged,
@@ -412,6 +448,42 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._antipode_basis_cache[key] = result
         return result
 
+    def antipode_inv(self, elem: Element) -> Element:
+        r"""S^-1, ported from arXiv:1812.10445 (stated right after
+        eq (3.35), "for convenience"): S^-1(K) = K^{(-1)^N} -- the same
+        formula as S(K) (see ``_antipode_K1()``), so S^-1(K^k) ==
+        S(K^k), computed by ``_antipode_K_power`` below rather than
+        duplicating it -- and S^-1(f_i^+-) = omega_+-.f_i^+- (contrast
+        S(f_i^+-) = f_i^+-.(...).K -- the combo comes first, not last).
+        Like S, an algebra anti-homomorphism (reverses word order), same
+        pattern as ``antipode()``."""
+        result = Element()
+        for (bits, k), coeff in elem.terms.items():
+            result = result + coeff * self._antipode_inv_basis(bits, k)
+        return result
+
+    def _antipode_inv_basis(self, bits, k) -> Element:
+        key = (bits, k)
+        cached = self._antipode_inv_basis_cache.get(key)
+        if cached is not None:
+            return cached
+        result = self._antipode_K_power(k)  # S^-1(K) == S(K), see antipode_inv()
+        for pos in reversed(range(len(bits))):
+            if bits[pos]:
+                result = result * self._antipode_inv_f(pos)
+        self._antipode_inv_basis_cache[key] = result
+        return result
+
+    def _antipode_inv_f(self, pos: int) -> Element:
+        """S^-1(f_i^+-) = omega_+- . f_i^+-."""
+        cached = self._antipode_inv_f_cache.get(pos)
+        if cached is not None:
+            return cached
+        sign = 1 if pos % 2 == 0 else -1
+        result = self._omega(sign) * self._f(pos)
+        self._antipode_inv_f_cache[pos] = result
+        return result
+
     # -- associator and evaluation/coevaluation elements ------------------------
     def _assoc_third_factor(self, i_sign: int) -> Element:
         """(K^N - 1).e0 + (beta^2 (i_sign*i*K)^N - 1).e1, the third tensor
@@ -595,7 +667,92 @@ class SymplecticFermionQ(QuasiHopfAlgebra):
         self._ribbon_inv_cache = result
         return result
 
-    # f_element() is generic (see QuasiHopfAlgebra) -- not overridden here.
+    def left_integral(self) -> Element:
+        r"""A two-sided integral, an element of H:
+
+            Lambda = 2^N beta^2 f_1^+ f_1^- ... f_N^+ f_N^- . e0 . (1+K)
+
+        Ported from eq:int-Q in the paper (Section 3.5), which gives
+        this formula for any scalar nu (the space of two-sided
+        integrals is one-dimensional, so nu is a free normalisation) --
+        nu=1 is fixed here. The paper verifies directly that
+        Lambda.K == Lambda == K.Lambda and Lambda.f_i^+- == 0 ==
+        f_i^+-.Lambda, from which Lambda.h == eps(h).Lambda == h.Lambda
+        follows for every h in H (eps(K)=1, eps(f_i^+-)=0). Genuinely
+        two-sided, so ``right_integral()`` below just returns this same
+        element. Checked by ``axioms.check_left_integral``/
+        ``axioms.check_right_integral``.
+        """
+        if self._left_integral_cache is not None:
+            return self._left_integral_cache
+
+        product = self.unit()
+        for k in range(1, self.N + 1):
+            product = product * self.f(k, "+") * self.f(k, "-")
+
+        scalar = (2**self.N) * self.beta_scalar() ** 2
+        result = (scalar * product) * self.e0 * (self.unit() + self.K)
+        self._left_integral_cache = result
+        return result
+
+    def right_integral(self) -> Element:
+        """Q's integral is two-sided (see ``left_integral()``'s
+        docstring), so this is the same element."""
+        return self.left_integral()
+
+    # f_element()/f_element_inv() are both generic (see QuasiHopfAlgebra)
+    # -- not overridden here. f_element_inv() was originally hand-derived
+    # for Q before the generic Drinfeld-eq-(1.36) version existed (an
+    # elementary block-by-block inversion of eq:def:F-Q -- H (x) H is the
+    # tensor-product *algebra*, e0 (x) e0/e0 (x) e1/e1 (x) e0/e1 (x) e1
+    # are orthogonal idempotents F splits into); confirmed to agree with
+    # the generic version exactly and kept as a regression test instead
+    # of an override, see tests/_special_elements.py's
+    # symplectic_fermion_expected_f_element_inv and
+    # tests/test_symplectic_fermion.py's
+    # test_f_element_inv_matches_explicit_formula.
+
+    def modulus(self, elem: Element):
+        """Q is unimodular (eq:int-Q's remark, Section 3.5: "In
+        particular, Q is unimodular"), so the modulus is just the
+        counit."""
+        return self.counit(elem)
+
+    def left_cointegral(self, elem: Element):
+        r"""A left (and, since Q's pivot has order 2, also right --
+        ``right_cointegral()`` below returns the same functional)
+        cointegral, ported from arXiv:1812.10445 eq (5.24)-(5.25):
+        nonzero only on the top-degree basis element
+        f_1^+f_1^-...f_N^+f_N^- . K^i, where it takes the value
+        a_+, b_+, a_-, b_- for i=0,1,2,3 respectively, with
+        a_+- = beta^2 +- [N even], b_+- = +-i [N odd].
+
+        The paper states this for its *own* basis convention
+        (f_1^+...f_N^+ . f_1^-...f_N^- . K^i, all +'s before all -'s),
+        which differs from this module's normal-form ordering
+        (f_1^+f_1^-f_2^+f_2^-..., interleaved -- see the module
+        docstring's basis description) by the sign of the permutation
+        reordering N pairs of anticommuting generators into interleaved
+        order, (-1)^(N(N-1)/2) -- confirmed empirically here (not just
+        derived by hand) via ``axioms.check_left_cointegral``, which
+        fails immediately if this sign is wrong.
+        """
+        top = (1,) * (2 * self.N)
+        sign = -1 if (self.N * (self.N - 1) // 2) % 2 else 1
+        beta2 = self.beta_scalar() ** 2
+        if self.N % 2 == 0:
+            values = {0: beta2 + 1, 1: CycloNum.zero(8), 2: beta2 - 1, 3: CycloNum.zero(8)}
+        else:
+            values = {0: beta2, 1: self.i(), 2: beta2, 3: -self.i()}
+        total = CycloNum.zero(8)
+        for (bits, k), coeff in elem.terms.items():
+            if bits == top:
+                total = total + sign * coeff * values[k]
+        return total
+
+    def right_cointegral(self, elem: Element):
+        """Q's cointegral is two-sided, see ``left_cointegral()``."""
+        return self.left_cointegral(elem)
 
     # -- readable output ---------------------------------------------------
     def pretty(self, elem: Element) -> str:

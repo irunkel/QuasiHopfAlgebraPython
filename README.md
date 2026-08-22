@@ -31,7 +31,11 @@ verified exactly (not numerically) against `axioms.py`'s full axiom set:
   quasi-Hopf algebra from Farsad-Gainutdinov-Runkel, ["The symplectic
   fermion ribbon quasi-Hopf algebra and the SL(2,Z)-action on its
   centre"](https://arxiv.org/abs/1706.08164). Fermionic generators, its
-  own normal-form reduction, including the R-matrix and ribbon element.
+  own normal-form reduction, the R-matrix and ribbon element and their
+  inverses, and -- the only one of the three with a sourced formula --
+  a two-sided integral and cointegral, the latter via
+  Berger-Gainutdinov-Runkel, ["Modified traces for quasi-Hopf
+  algebras"](https://arxiv.org/abs/1812.10445).
 
 See each example's module docstring (`src/hopfsym/examples/`) for its
 precise definition and derivations, and `CLAUDE.md` for the architecture.

@@ -233,9 +233,26 @@ QuasiHopfAlgebra (algebra.py)
     NotImplementedError; the inverses are optional in their own right,
     not generic -- an algebra can have r_matrix()/ribbon() without a
     closed form for the inverse, see SymplecticFermionQ vs the other two
-    examples). mul(), elt(), tag() and, once r_matrix()/associator() etc.
-    are there, monodromy(), drinfeld(), f_element() too -- all provably
-    generic, given for free.
+    examples); left_integral(), right_integral(), left_cointegral(elem),
+    right_cointegral(elem), modulus(elem), antipode_inv(elem),
+    f_element_inv() -- also optional, default to NotImplementedError
+    (only SymplecticFermionQ implements all of these so far). mul(),
+    elt(), tag() and, once r_matrix()/associator() etc. are there,
+    monodromy(), drinfeld(), gamma(), f_element(), f_element_inv() too --
+    all provably generic, given for free (f_element_inv() per Drinfeld's
+    eq (1.36), needing only the same data as f_element() itself, *not*
+    antipode_inv() -- unlike SymplecticFermionQ's original hand-derived
+    override, now removed in favour of this and kept only as a
+    regression test, see tests/_special_elements.py); likewise
+    qR()/pR()/qL()/pL() and U()/V()/Ucop()/Vcop()
+    (Hausser-Nill/Bulacu-Caenepeel, via arXiv:1812.10445 eq
+    (3.24)/(3.25)/(3.28)) once antipode_inv() is there -- needed by
+    check_left_cointegral/check_right_cointegral below.
+    modulus() is *not* generic despite being technically derivable from
+    left_integral() -- given explicitly per algebra instead, cross-
+    checked against a generic derivation in a test rather than in
+    production code (tests/test_symplectic_fermion.py's
+    ``_derive_modulus``/``CointegralTests``).
 
 axioms.py
     generic checkers written only against that interface, in terms of
@@ -243,14 +260,45 @@ axioms.py
     spelled out (see "Element * Element" below): check_associativity,
     check_bialgebra_homomorphism, check_counit,
     check_twisted_coassociativity, check_pentagon, check_antipode,
-    check_evaluation_coevaluation, and check_all() to run the required
-    ones together; check_r_matrix_intertwiner, check_r_matrix_inverse,
+    check_evaluation_coevaluation, check_alpha_beta_normalization
+    (eps(alpha) == 1 == eps(beta) -- a normalisation convention the
+    axioms alone only force the *product* of, not each factor
+    individually; see its docstring and algebra.py's alpha()/beta()
+    docs), and check_all() to run the required ones together;
+    check_r_matrix_intertwiner, check_r_matrix_inverse,
     check_hexagon, check_ribbon, check_ribbon_inverse,
-    check_s_delta_compatibility for the optional quasi-triangular/ribbon
-    structure (not part of check_all, since not every algebra has it --
-    call these separately, see README). The two `_inverse` checks need
+    check_s_delta_compatibility, check_gamma_definition for the optional
+    quasi-triangular/ribbon structure (not part of check_all, since not
+    every algebra has it -- call these separately, see README) -- though
+    the last two are actually provably generic (f_element()/gamma() need
+    only the required interface), just grouped here for the same "call
+    separately" treatment. The two `_inverse` checks need
     r_matrix_inv()/ribbon_inv() specifically, a level more optional than
     r_matrix()/ribbon() themselves (see algebra.py's docstring).
+    check_gamma_definition (Drinfeld eq (1.35)) cross-checks gamma()
+    against f_element() . Delta(alpha). (There was briefly a
+    check_f_element_conjugation for Drinfeld's eq (1.34) too, but it
+    turned out to be the algebraic consequence of
+    check_s_delta_compatibility right-multiplied by F^-1 -- redundant
+    once that check and F.F^-1 == 1 (x) 1 both hold, so removed.)
+    check_left_integral/check_right_integral need left_integral()/
+    right_integral() (also optional) -- check_right_integral is defined
+    by literally multiplying the other way round (``Lambda * a``
+    instead of ``a * Lambda``), not by constructing a separate H^op
+    algebra. Unlike most checks here both default to the *entire* basis
+    rather than a random sample, since the defining condition is linear
+    in the tested element and cheap to check exhaustively (see their
+    docstrings) -- also check the integral isn't accidentally zero,
+    which would otherwise pass vacuously.
+    check_left_cointegral/check_right_cointegral implement Definition
+    3.5 (arXiv:1812.10445, paraphrasing Bulacu-Caenepeel) -- need
+    left_cointegral()/right_cointegral(), modulus(), and U()/V() (resp.
+    Ucop()/Vcop()) from algebra.py, so transitively need antipode_inv()/
+    f_element_inv() too. Unlike the integral checks, these are *not*
+    linear in the tested element (genuinely expand the coproduct and
+    multiply out H (x) H elements), so default to a random SAMPLE_SIZE
+    sample like most other checks, not the whole basis -- also check
+    the cointegral isn't identically zero on the basis.
 
 examples/quantum_sl2_quasi.py, examples/restricted_sl2.py
     U_q^{(Phi)}sl(2) and its K^p=1 quotient. multiply_basis is
@@ -267,7 +315,12 @@ examples/symplectic_fermion.py
     different example (anticommuting generators, not q-deformed ones),
     with its own from-scratch _reduce_word (sign flips and a fixed
     central-idempotent correction term, not q-powers or a recursive
-    commutator). Full ribbon quasi-Hopf structure, same as the other two.
+    commutator). Full ribbon quasi-Hopf structure, same as the other two,
+    plus left_integral() (eq:int-Q from arXiv:1706.08164, cross-cited by
+    arXiv:1812.10445) and left_cointegral()/modulus()/antipode_inv()/
+    f_element_inv() (all from arXiv:1812.10445, see the module's own
+    docstring) -- the only one of the three examples with sourced
+    integral/cointegral formulas so far.
 ```
 
 ### `Element * Element`: tagged elements, for interactive use

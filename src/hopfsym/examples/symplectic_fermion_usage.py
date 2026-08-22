@@ -125,3 +125,25 @@ print(axioms.check_ribbon_inverse(alg))
 print(alg.pretty(alg.ribbon_inv()))
 
 # %%
+# The two-sided integral (eq:int-Q) -- checked against its defining
+# property h.Lambda == eps(h).Lambda == Lambda.h by
+# check_left_integral/check_right_integral. right_integral() is the
+# same element as left_integral() here, since the integral is two-sided.
+print(axioms.check_left_integral(alg))
+print(axioms.check_right_integral(alg))
+print(alg.pretty(alg.left_integral()))
+
+# %%
+# The cointegral (dual to the integral above, arXiv:1812.10445
+# Definition 3.5) -- checked by check_left_cointegral/
+# check_right_cointegral, which need U()/V()/Ucop()/Vcop()
+# (algebra.py) and so antipode_inv()/f_element_inv() in turn.
+# right_cointegral() is the same functional as left_cointegral() here
+# (Q's pivot has order 2), and modulus() is just the counit (Q is
+# unimodular). eps(f1p), eps(K) are 0 and 1 as usual; left_cointegral
+# is nonzero only on the top basis element.
+print(axioms.check_left_cointegral(alg))
+print(axioms.check_right_cointegral(alg))
+print(alg.left_cointegral(f1p * f1m * f2p * alg.f(2, "-")))
+
+# %%

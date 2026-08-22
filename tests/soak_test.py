@@ -51,6 +51,7 @@ from _special_elements import (
     restricted_sl2_expected_f_element,
     symplectic_fermion_expected_drinfeld,
     symplectic_fermion_expected_f_element,
+    symplectic_fermion_expected_f_element_inv,
 )
 
 
@@ -79,6 +80,9 @@ _check_restricted_sl2_drinfeld = _make_explicit_formula_check("drinfeld", restri
 _check_restricted_sl2_f_element = _make_explicit_formula_check("f_element", restricted_sl2_expected_f_element)
 _check_symplectic_fermion_drinfeld = _make_explicit_formula_check("drinfeld", symplectic_fermion_expected_drinfeld)
 _check_symplectic_fermion_f_element = _make_explicit_formula_check("f_element", symplectic_fermion_expected_f_element)
+_check_symplectic_fermion_f_element_inv = _make_explicit_formula_check(
+    "f_element_inv", symplectic_fermion_expected_f_element_inv
+)
 
 
 def _round_quantum_sl2_quasi():
@@ -90,6 +94,7 @@ def _round_quantum_sl2_quasi():
         ("check_hexagon", axioms.check_hexagon),
         ("check_ribbon", axioms.check_ribbon),
         ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
+        ("check_gamma_definition", axioms.check_gamma_definition),
     ]
     return f"QuantumSl2Quasi(p={p}, t={t})", alg, checks
 
@@ -103,6 +108,7 @@ def _round_restricted_sl2():
         ("check_hexagon", axioms.check_hexagon),
         ("check_ribbon", axioms.check_ribbon),
         ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
+        ("check_gamma_definition", axioms.check_gamma_definition),
         # generic drinfeld()/f_element() (QuasiHopfAlgebra) against the
         # classical-Hopf-algebra closed forms this trivial-Phi algebra
         # collapses to -- see tests/_special_elements.py.
@@ -122,12 +128,18 @@ def _round_symplectic_fermion():
         ("check_hexagon", axioms.check_hexagon),
         ("check_ribbon", axioms.check_ribbon),
         ("check_ribbon_inverse", axioms.check_ribbon_inverse),
+        ("check_left_integral", axioms.check_left_integral),
+        ("check_right_integral", axioms.check_right_integral),
+        ("check_left_cointegral", axioms.check_left_cointegral),
+        ("check_right_cointegral", axioms.check_right_cointegral),
         ("check_s_delta_compatibility", axioms.check_s_delta_compatibility),
-        # generic drinfeld()/f_element() (QuasiHopfAlgebra) against the
-        # paper's own closed forms (eq:sqs+sqsinvbr-Q, eq:def:F-Q) --
-        # see tests/_special_elements.py.
+        ("check_gamma_definition", axioms.check_gamma_definition),
+        # generic drinfeld()/f_element()/f_element_inv() (QuasiHopfAlgebra)
+        # against the paper's own closed forms (eq:sqs+sqsinvbr-Q,
+        # eq:def:F-Q) -- see tests/_special_elements.py.
         ("check_drinfeld_matches_explicit_formula", _check_symplectic_fermion_drinfeld),
         ("check_f_element_matches_explicit_formula", _check_symplectic_fermion_f_element),
+        ("check_f_element_inv_matches_explicit_formula", _check_symplectic_fermion_f_element_inv),
     ]
     return f"SymplecticFermionQ(N={N}, beta_power={beta_power})", alg, checks
 
